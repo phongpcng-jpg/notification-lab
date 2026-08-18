@@ -1,0 +1,32 @@
+{
+  "name": "notification-lab-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "migrate": "tsx scripts/migrate.ts",
+    "seed": "tsx scripts/seed.ts",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "better-sqlite3": "^11.3.0",
+    "web-push": "^3.6.7",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "tsx": "^4.19.1",
+    "@types/node": "^22.7.4",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/web-push": "^3.6.3",
+    "vitest": "^2.1.1",
+    "eslint": "^9.11.1"
+  }
+}

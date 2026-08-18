@@ -1,0 +1,113 @@
+# ==== Dependencies ====
+node_modules/
+.pnp
+.pnp.js
+
+# ==== Env / secrets ====
+# .env.example được giữ lại làm mẫu, các file .env thật thì không commit
+.env
+.env.*
+!.env.example
+!backend/.env.example
+
+# ==== Build output ====
+dist/
+build/
+*.tsbuildinfo
+
+# ==== Backend runtime data (SQLite) ====
+backend/data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ==== Logs ====
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==== Benchmark output (generated, không nên commit) ====
+benchmark/results/raw/*
+benchmark/results/reports/*
+benchmark/results/processed/*
+!benchmark/results/raw/.gitkeep
+!benchmark/results/reports/.gitkeep
+!benchmark/results/processed/.gitkeep
+
+# ==== Editor / OS ====
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# ==== Test / coverage ====
+coverage/
+.vitest-cache/
+
+# ==== Misc caches ====
+.cache/
+.vite/
+*.tmp
+
+# ==== Seed script output (users/follow graph configurable scale) ====
+# Nếu seed script export ra file (csv/json) để review thay vì ghi thẳng DB
+backend/scripts/seed-output/
+backend/scripts/*.seed.json
+backend/scripts/*.seed.csv
+
+# ==== Web Push runtime state ====
+# Subscription store nếu lưu ra file thay vì DB (VAPID keys đã ignore ở phần .env)
+backend/data/subscriptions*.json
+*.vapid.json
+
+# ==== TLS / certs ====
+# Cần cho WSS/SSE qua HTTPS khi test Poor Network / Connection Storm ở local
+*.pem
+*.key
+*.crt
+*.p12
+certs/
+!certs/README.md
+
+# ==== Network / load-test artifacts ====
+# Connection Storm, Reconnection Storm, Poor Network scenarios (C-F, G-J)
+# thường dùng toxiproxy/tc-netem/k6/artillery/autocannon, output không nên commit
+benchmark/**/*.pcap
+benchmark/**/*.har
+.toxiproxy/
+k6-results/
+artillery-output/
+*.autocannon.json
+
+# ==== Benchmark generated report assets ====
+# Charts/hình ảnh sinh ra từ xử lý raw data (đã ignore ở phần results/*)
+# nhưng phòng trường hợp export riêng ngoài results/
+benchmark/**/*.png
+benchmark/**/*.svg
+!docs/**/*.png
+!docs/**/*.svg
+!research/**/*.png
+!research/**/*.svg
+
+# ==== Data processing (nếu report/decision matrix dùng Python: pandas/matplotlib) ====
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.ipynb_checkpoints/
+
+# ==== Compiled/exported final reports ====
+# Giữ lại bản .md nguồn, ignore bản build ra pdf/docx nếu tự động generate
+docs/**/*.pdf
+docs/**/*.docx
+!docs/adr/**
+
+# ==== Docker (nếu thêm compose cho các transport sau này) ====
+docker-compose.override.yml
+.docker/
+volumes/

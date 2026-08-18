@@ -1,0 +1,31 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f5f6f8;
+  color: #1a1a1a;
+}
+.app { max-width: 720px; margin: 0 auto; padding: 20px; }
+.card {
+  background: white;
+  border: 1px solid #e2e4e8;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+select, input, textarea, button {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+button {
+  background: #2c5aa0;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+button:disabled { background: #999; cursor: not-allowed; }
+.post-item { padding: 10px 0; border-bottom: 1px solid #eee; }
+.muted { color: #777; font-size: 12px; }
