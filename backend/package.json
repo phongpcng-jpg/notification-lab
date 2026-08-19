@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
+    "generate-vapid-keys": "tsx scripts/generateVapidKeys.ts",
     "test": "vitest run",
     "lint": "eslint src"
   },

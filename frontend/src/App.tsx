@@ -4,6 +4,7 @@ import { useShortPolling } from "./transports/shortPolling.js";
 import { useLongPolling } from "./transports/longPolling.js";
 import { useSse } from "./transports/sse.js";
 import { useWebSocket } from "./transports/websocket.js";
+import { useWebPush } from "./transports/webPush.js";
 
 type TransportKind =
   | "short_polling"
@@ -17,7 +18,7 @@ const TRANSPORT_LABELS: Record<TransportKind, string> = {
   long_polling: "Long Polling",
   sse: "SSE",
   websocket: "WebSocket",
-  web_push: "Web Push (chưa implement)",
+  web_push: "Web Push",
 };
 
 export default function App() {
@@ -41,6 +42,7 @@ export default function App() {
   );
   const sse = useSse(currentUserId, transport === "sse");
   const websocket = useWebSocket(currentUserId, transport === "websocket");
+  const webPush = useWebPush(currentUserId);
 
   const refreshUsers = () => api.listUsers().then((r) => setUsers(r.users));
   const refreshPosts = () => api.listPosts().then((r) => setPosts(r.posts));
@@ -183,16 +185,7 @@ export default function App() {
             onChange={(e) => setTransport(e.target.value as TransportKind)}
           >
             {(Object.keys(TRANSPORT_LABELS) as TransportKind[]).map((t) => (
-              <option
-                key={t}
-                value={t}
-                disabled={
-                  t !== "short_polling" &&
-                  t !== "long_polling" &&
-                  t !== "sse" &&
-                  t !== "websocket"
-                }
-              >
+              <option key={t} value={t}>
                 {TRANSPORT_LABELS[t]}
               </option>
             ))}
@@ -302,6 +295,29 @@ export default function App() {
                   </li>
                 ))}
               </ul>
+            </>
+          )}
+
+          {transport === "web_push" && (
+            <>
+              <p className="muted">
+                Trạng thái: {webPush.status}
+                {webPush.lastError && <> — {webPush.lastError}</>}
+              </p>
+              <p className="muted">
+                Web Push KHÔNG hiển thị danh sách ở đây — notification sẽ
+                hiện ra dưới dạng thông báo hệ điều hành (kể cả khi tab này
+                đóng), do Service Worker xử lý, không qua React state.
+              </p>
+              {webPush.status !== "subscribed" ? (
+                <button onClick={() => webPush.subscribe()}>
+                  Bật thông báo đẩy
+                </button>
+              ) : (
+                <button onClick={() => webPush.unsubscribe()}>
+                  Tắt thông báo đẩy
+                </button>
+              )}
             </>
           )}
         </div>

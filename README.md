@@ -4,14 +4,16 @@ Hệ thống thực nghiệm so sánh 5 kỹ thuật notification web (Short Pol
 Long Polling, SSE, WebSocket, Web Push) trên cùng một domain: đăng bài +
 follow.
 
-> **Trạng thái hiện tại: Phase 2 (4/5 transport) — Short Polling + Long
-> Polling + SSE + WebSocket hoàn thành.**
+> **Trạng thái hiện tại: Phase 2 HOÀN THÀNH — cả 5/5 transport đã implement.**
 > Đã có: domain model, migration, CRUD (users/follows/posts), fan-out
-> notification, seed script quy mô lớn, frontend cơ bản, **4 transport đầy
-> đủ** (route, React hook, UI transport selector, tests). WebSocket là
-> transport 2 chiều duy nhất — có cơ chế ack thật.
-> **Chưa có:** Web Push (transport cuối, khác bản chất — hoạt động cả khi
-> tab đóng). Xem `docs/transport-reports/` cho chi tiết từng transport.
+> notification, seed script quy mô lớn, frontend đầy đủ (chọn user, follow,
+> đăng bài, feed, transport selector cho cả 5 kỹ thuật), và **5 transport
+> hoàn chỉnh** (route, hook/client, tests, transport report riêng cho từng
+> loại trong `docs/transport-reports/`): Short Polling, Long Polling, SSE,
+> WebSocket (2 chiều thật, có ack), Web Push (offline/background delivery).
+> **Chưa có:** benchmark framework (Phase 9+), deploy free hosting (theo xác
+> nhận: để sau). Xem `docs/transport-reports/` cho chi tiết delivery
+> semantics và giới hạn đã biết của từng transport.
 
 ## 1. Requirements
 - Node.js ≥ 20 (đã test với v22)
@@ -28,8 +30,10 @@ cd ../frontend && npm install
 ```bash
 cd backend
 cp .env.example .env
-# Sửa .env nếu cần (port, VAPID key khi tới Phase Web Push, v.v.)
+npm run generate-vapid-keys   # in ra VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY, dán vào .env
 ```
+Web Push sẽ tự bị bỏ qua (không lỗi) nếu bạn chưa chạy bước sinh VAPID key —
+4 transport còn lại hoạt động bình thường không cần bước này.
 
 ## 4. Local development
 
@@ -46,7 +50,15 @@ cd frontend
 npm run dev        # Vite dev server tại http://localhost:5173 (proxy /api -> :3000)
 ```
 
-Mở `http://localhost:5173`, chọn/tạo user, follow người khác, đăng bài, xem feed.
+Mở `http://localhost:5173`, chọn/tạo user, follow người khác, đăng bài, xem
+feed. Chọn transport ở panel "Notification (realtime)" — mở 2 trình duyệt/2
+tab với 2 user khác nhau (1 người follow người kia) để thấy notification
+thật khi đăng bài.
+
+**Web Push cần lưu ý:** bấm nút "Bật thông báo đẩy" (không tự động — trình
+duyệt yêu cầu user gesture), rồi có thể đóng tab để test — notification vẫn
+hiện ra qua OS. Chạy trên `localhost` không cần HTTPS thật (ngoại lệ của
+trình duyệt).
 
 ## 5. Sinh dữ liệu lớn (users + follow graph)
 ```bash
@@ -94,16 +106,20 @@ notification-lab/
 ├── backend/        # Fastify + TypeScript + better-sqlite3
 │   ├── src/
 │   │   ├── db/          # schema.sql, connection
-│   │   ├── domain/      # types, NotificationService (transport-agnostic)
-│   │   ├── routes/      # users, follows, posts, notifications (REST)
-│   │   └── server.ts
-│   └── scripts/         # migrate.ts, seed.ts
+│   │   ├── domain/      # NotificationService, 5 transport hub/sender, types
+│   │   ├── routes/      # users, follows, posts, notifications + 5 transport routes
+│   │   ├── test/         # helpers.ts dùng chung cho mọi test file
+│   │   └── server.ts / app.ts
+│   └── scripts/         # migrate.ts, seed.ts, generateVapidKeys.ts
 ├── frontend/        # React + Vite
+│   ├── public/sw.js      # Service Worker cho Web Push
+│   └── src/transports/   # 1 hook/module riêng cho mỗi transport + backoff dùng chung
 ├── benchmark/        # scaffold, chưa implement (Phase 9+)
 ├── research/          # báo cáo nghiên cứu lý thuyết (Track A)
 ├── docs/
 │   ├── architecture.md
-│   └── adr/            # Architectural Decision Records
+│   ├── adr/                 # Architectural Decision Records
+│   └── transport-reports/    # báo cáo riêng cho từng transport (5 file)
 └── README.md
 ```
 

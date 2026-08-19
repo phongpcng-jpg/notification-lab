@@ -10,6 +10,8 @@ import { shortPollingRoutes } from "./routes/shortPolling.js";
 import { longPollingRoutes } from "./routes/longPolling.js";
 import { sseRoutes } from "./routes/sse.js";
 import { websocketRoutes } from "./routes/websocket.js";
+import { webPushRoutes } from "./routes/webPush.js";
+import { sendWebPushForNotification } from "./domain/webPushSender.js";
 import { notificationService } from "./domain/notificationService.js";
 import { notificationWaiters } from "./domain/notificationWaiters.js";
 import { sseHub } from "./domain/sseHub.js";
@@ -34,6 +36,14 @@ function wireTransportsToNotificationService(): void {
     for (const row of rows) {
       sseHub.publish(row.recipient_id, row);
       wsHub.publish(row.recipient_id, row);
+      // Web Push: fire-and-forget có chủ đích — gửi qua Push Service bên thứ
+      // 3 có thể chậm/lỗi, KHÔNG được block luồng tạo notification chính.
+      // Lỗi (nếu có) đã được xử lý bên trong sendWebPushForNotification()
+      // (ghi delivery_attempts, đánh dấu subscription hết hạn...), .catch()
+      // ở đây chỉ là lưới an toàn cuối cùng cho lỗi không lường trước.
+      void sendWebPushForNotification(row).catch((err) => {
+        console.error("[webPush] Lỗi không lường trước khi gửi:", err);
+      });
     }
   });
 }
@@ -70,9 +80,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(longPollingRoutes);
   await app.register(sseRoutes);
   await app.register(websocketRoutes);
-
-  // ── Phase 2 tiếp theo sẽ đăng ký thêm ở đây: ──
-  // await app.register(webPushRoutes);
+  await app.register(webPushRoutes);
 
   return app;
 }

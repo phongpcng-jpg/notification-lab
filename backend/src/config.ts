@@ -26,10 +26,5 @@ export const config = {
   // WebSocket
   wsHeartbeatMs: Number(process.env.WS_HEARTBEAT_MS ?? 20_000),
 
-  // Web Push (VAPID) — KHÔNG hard-code, phải set qua .env
-  vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? "",
-  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY ?? "",
-  vapidSubject: process.env.VAPID_SUBJECT ?? "mailto:admin@example.com",
-
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
 };
