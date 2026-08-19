@@ -10,7 +10,11 @@ import type { DomainEvent, EventType } from "./types.js";
  * onNotificationCreated().
  */
 
-type Listener = (notificationIds: number[], eventId: number) => void;
+type Listener = (
+  notificationIds: number[],
+  eventId: number,
+  recipientIds: number[]
+) => void;
 
 class NotificationService {
   private listeners: Listener[] = [];
@@ -19,10 +23,14 @@ class NotificationService {
     this.listeners.push(fn);
   }
 
-  private emit(notificationIds: number[], eventId: number): void {
+  private emit(
+    notificationIds: number[],
+    eventId: number,
+    recipientIds: number[]
+  ): void {
     for (const fn of this.listeners) {
       try {
-        fn(notificationIds, eventId);
+        fn(notificationIds, eventId, recipientIds);
       } catch (err) {
         // Một listener lỗi không được làm hỏng luồng tạo notification.
         console.error("[NotificationService] listener error:", err);
@@ -72,7 +80,7 @@ class NotificationService {
     });
 
     const result = tx();
-    this.emit(result.notificationIds, result.eventId);
+    this.emit(result.notificationIds, result.eventId, result.recipientIds);
     return result;
   }
 
@@ -89,6 +97,21 @@ class NotificationService {
     db.prepare(
       `UPDATE notifications SET status = 'read', read_at = unixepoch()
        WHERE id = ? AND recipient_id = ?`
+    ).run(notificationId, recipientId);
+  }
+
+  /**
+   * Đánh dấu 'acknowledged' — chỉ có ý nghĩa với transport 2 chiều thật sự
+   * (hiện tại: WebSocket), vì cần client chủ động gửi ngược lại 1 message
+   * xác nhận đã nhận. Short/Long Polling/SSE không có kênh client->server
+   * trên cùng kết nối nên không thể "ack" theo nghĩa này (chỉ có REST
+   * /notifications/:id/read riêng, đánh dấu 'read' chứ không phải 'acknowledged').
+   */
+  markAcknowledged(notificationId: number, recipientId: number): void {
+    const db = getDb();
+    db.prepare(
+      `UPDATE notifications SET status = 'acknowledged'
+       WHERE id = ? AND recipient_id = ? AND status IN ('queued', 'delivered')`
     ).run(notificationId, recipientId);
   }
 

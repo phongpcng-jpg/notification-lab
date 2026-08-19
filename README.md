@@ -4,13 +4,14 @@ Hệ thống thực nghiệm so sánh 5 kỹ thuật notification web (Short Pol
 Long Polling, SSE, WebSocket, Web Push) trên cùng một domain: đăng bài +
 follow.
 
-> **Trạng thái hiện tại: Phase 1 hoàn thành.**
+> **Trạng thái hiện tại: Phase 2 (4/5 transport) — Short Polling + Long
+> Polling + SSE + WebSocket hoàn thành.**
 > Đã có: domain model, migration, CRUD (users/follows/posts), fan-out
-> notification (tạo record DB), seed script quy mô lớn, frontend cơ bản
-> (chọn user / follow / đăng bài / xem feed).
-> **Chưa có:** 5 transport thật (polling/SSE/WS/push) — notification hiện
-> tại chỉ được ghi vào DB, chưa được đẩy realtime tới client. Đây là việc
-> của Phase 2 trở đi (xem `docs/architecture.md` và kế hoạch trong conversation).
+> notification, seed script quy mô lớn, frontend cơ bản, **4 transport đầy
+> đủ** (route, React hook, UI transport selector, tests). WebSocket là
+> transport 2 chiều duy nhất — có cơ chế ack thật.
+> **Chưa có:** Web Push (transport cuối, khác bản chất — hoạt động cả khi
+> tab đóng). Xem `docs/transport-reports/` cho chi tiết từng transport.
 
 ## 1. Requirements
 - Node.js ≥ 20 (đã test với v22)
@@ -59,6 +60,12 @@ Xem chi tiết options trong `backend/scripts/seed.ts`.
 list). Nó KHÔNG tạo notification/event — muốn test luồng notification thật,
 dùng `POST /posts` (qua UI hoặc benchmark generator ở Phase 2+) trên dữ liệu
 đã seed.
+
+## 5b. Chạy test
+```bash
+cd backend && npm test    # vitest, dùng SQLite in-memory, không đụng data/ thật
+cd frontend && npm test   # vitest, unit test cho backoff util
+```
 
 ## 6. Running benchmarks
 Chưa implement — xem `benchmark/README.md`.

@@ -1,42 +1,14 @@
-import Fastify from "fastify";
-import cors from "@fastify/cors";
 import { config } from "./config.js";
 import { migrate } from "./db/index.js";
-import { userRoutes } from "./routes/users.js";
-import { followRoutes } from "./routes/follows.js";
-import { postRoutes } from "./routes/posts.js";
-import { notificationRoutes } from "./routes/notifications.js";
+import { buildApp } from "./app.js";
+import { sseHub } from "./domain/sseHub.js";
+import { wsHub } from "./domain/wsHub.js";
 
 async function main() {
   // Đảm bảo schema tồn tại trước khi nhận request (idempotent).
   migrate();
 
-  const app = Fastify({
-    logger: {
-      level: process.env.LOG_LEVEL ?? "info",
-    },
-  });
-
-  await app.register(cors, {
-    origin: config.corsOrigin,
-  });
-
-  app.get("/health", async () => ({
-    status: "ok",
-    time: new Date().toISOString(),
-  }));
-
-  await app.register(userRoutes);
-  await app.register(followRoutes);
-  await app.register(postRoutes);
-  await app.register(notificationRoutes);
-
-  // ── Phase 2 sẽ đăng ký thêm ở đây: ──
-  // await app.register(shortPollingRoutes);
-  // await app.register(longPollingRoutes);
-  // await app.register(sseRoutes);
-  // await app.register(websocketRoutes);
-  // await app.register(webPushRoutes);
+  const app = await buildApp();
 
   try {
     await app.listen({ port: config.port, host: "0.0.0.0" });
@@ -50,6 +22,8 @@ async function main() {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, async () => {
       app.log.info(`Received ${signal}, shutting down gracefully...`);
+      sseHub.closeAll();
+      wsHub.closeAll();
       await app.close();
       process.exit(0);
     });
