@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "run": "tsx runners/run.ts",
+    "run-network": "tsx runners/runNetworkScenario.ts",
     "compare": "tsx runners/compareTransports.ts",
     "webpush-dispatch": "tsx runners/webPushDispatch.ts",
     "lint": "tsc --noEmit -p tsconfig.json"

@@ -1,4 +1,26 @@
-const BASE_URL = process.env.BENCHMARK_API_BASE_URL ?? "http://localhost:3000";
+/**
+ * Base URL đọc ĐỘNG (không đóng băng lúc import) — cho phép Scenario H
+ * (runNetworkScenario.ts) tạm thời trỏ mọi request qua Toxiproxy proxy mà
+ * KHÔNG cần set biến môi trường trước khi tiến trình khởi động, và KHÔNG
+ * ảnh hưởng tới các scenario khác (chúng không bao giờ gọi setApiBaseUrl()).
+ */
+let baseUrlOverride: string | null = null;
+
+export function setApiBaseUrl(url: string): void {
+  baseUrlOverride = url;
+}
+
+export function resetApiBaseUrl(): void {
+  baseUrlOverride = null;
+}
+
+export function apiBaseUrl(): string {
+  return baseUrlOverride ?? process.env.BENCHMARK_API_BASE_URL ?? "http://localhost:3000";
+}
+
+export function wsBaseUrl(): string {
+  return apiBaseUrl().replace(/^http/, "ws");
+}
 
 export interface ApiUser {
   id: number;
@@ -13,23 +35,15 @@ export interface CreatedPost {
   recipientIds: number[];
 }
 
-export function apiBaseUrl(): string {
-  return BASE_URL;
-}
-
-export function wsBaseUrl(): string {
-  return BASE_URL.replace(/^http/, "ws");
-}
-
 export async function listUsers(): Promise<ApiUser[]> {
-  const res = await fetch(`${BASE_URL}/users`);
+  const res = await fetch(`${apiBaseUrl()}/users`);
   if (!res.ok) throw new Error(`GET /users thất bại: HTTP ${res.status}`);
   const body = (await res.json()) as { users: ApiUser[] };
   return body.users;
 }
 
 export async function getFollowers(userId: number): Promise<ApiUser[]> {
-  const res = await fetch(`${BASE_URL}/users/${userId}/followers`);
+  const res = await fetch(`${apiBaseUrl()}/users/${userId}/followers`);
   if (!res.ok) {
     throw new Error(`GET /users/${userId}/followers thất bại: HTTP ${res.status}`);
   }
@@ -38,7 +52,7 @@ export async function getFollowers(userId: number): Promise<ApiUser[]> {
 }
 
 export async function createPost(authorId: number, script: string): Promise<CreatedPost> {
-  const res = await fetch(`${BASE_URL}/posts`, {
+  const res = await fetch(`${apiBaseUrl()}/posts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ authorId, script }),
@@ -51,7 +65,7 @@ export async function createPost(authorId: number, script: string): Promise<Crea
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE_URL}/health`);
+    const res = await fetch(`${apiBaseUrl()}/health`);
     return res.ok;
   } catch {
     return false;

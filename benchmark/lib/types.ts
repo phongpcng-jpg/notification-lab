@@ -39,3 +39,31 @@ export interface ReceivedEvent {
   /** Date.now() phía client (giả lập) tại thời điểm nhận được message. */
   receivedAtMs: number;
 }
+
+/**
+ * Cấu hình riêng cho Scenario H (Poor Network) — CHỈ được đọc bởi
+ * `runners/runNetworkScenario.ts`. Mở rộng ScenarioConfig với thông tin
+ * proxy + danh sách toxic cần Toxiproxy áp dụng.
+ */
+export interface NetworkToxicSchedule {
+  name: string;
+  type: string;
+  stream?: "upstream" | "downstream";
+  toxicity?: number;
+  attributes: Record<string, number>;
+  /** Bật toxic này tại mốc thời gian (ms, tính từ lúc scenario bắt đầu). Bỏ trống = bật ngay từ đầu. */
+  enabledAtMs?: number;
+  /** Tắt toxic này tại mốc thời gian (ms). Bỏ trống = giữ tới hết scenario. */
+  disabledAtMs?: number;
+}
+
+export interface NetworkScenarioConfig extends ScenarioConfig {
+  network: {
+    proxyName: string;
+    /** host:port mà benchmark client sẽ kết nối tới (Toxiproxy lắng nghe ở đây) */
+    listen: string;
+    /** host:port của backend thật — Toxiproxy forward tới đây */
+    upstream: string;
+    toxics: NetworkToxicSchedule[];
+  };
+}

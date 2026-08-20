@@ -9,9 +9,10 @@ follow.
 > Đã có: domain model, migration, CRUD, fan-out notification, seed script,
 > frontend đầy đủ 5 transport, và **benchmark framework hoàn chỉnh**: 4/5
 > transport tự động hoá được (Web Push benchmark riêng, giới hạn ghi rõ),
-> 9/10 scenario A-J implement được (Scenario H không khả thi bằng Node.js
-> thuần, ghi rõ lý do), thu thập metrics (latency percentile, delivery rate,
-> duplicate, error, reconnect), so sánh cross-transport tự động.
+> 10/10 scenario A-J implement được (Scenario H dùng Toxiproxy, thiết kế độc
+> lập — chỉ H mới cần Toxiproxy đang chạy, 9 scenario còn lại không bị ảnh
+> hưởng), thu thập metrics (latency percentile, delivery rate, duplicate,
+> error, reconnect), so sánh cross-transport tự động.
 > **CHƯA CÓ LẦN CHẠY THẬT NÀO** — sandbox viết code này không có network để
 > `npm install`. Mọi số liệu benchmark là `PENDING` cho tới khi bạn tự chạy.
 > **Chưa làm:** deploy free hosting (để sau theo xác nhận), báo cáo so sánh
@@ -89,7 +90,8 @@ npm run run -- --scenario=A --transport=sse
 npm run compare -- --scenario=A   # so sánh cả 4 transport tự động hoá được
 ```
 Xem `benchmark/README.md` cho đầy đủ 10 scenario, cách override tham số, và
-giới hạn đã biết (Scenario H không khả thi, Web Push benchmark riêng).
+giới hạn đã biết (Scenario H cần Toxiproxy — xem `scenarios/H-README.md`,
+Web Push benchmark riêng).
 
 ## 7. Running stress tests
 Dùng chung framework ở mục 6 — các scenario C (Massive Fan-out), E
@@ -128,7 +130,7 @@ notification-lab/
 │   ├── lib/             # apiClient, pickPublisher, metrics, report (dùng chung)
 │   ├── generators/       # 1 SimulatedClient/transport (4/5, Web Push riêng)
 │   ├── runners/            # run.ts, compareTransports.ts, webPushDispatch.ts
-│   └── scenarios/            # 9/10 scenario config (A-J, trừ H)
+│   └── scenarios/            # 10/10 scenario config (A-J), H dùng Toxiproxy
 ├── research/          # báo cáo nghiên cứu lý thuyết (Track A)
 ├── docs/
 │   ├── architecture.md

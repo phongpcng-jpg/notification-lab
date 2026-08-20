@@ -53,6 +53,9 @@ npm run run -- --scenario=D --transport=websocket --posts-per-second=20 --durati
 
 # So sánh cùng 1 scenario trên cả 4 transport (chạy tuần tự, không song song):
 npm run compare -- --scenario=A
+
+# Scenario H (Poor Network) — cần Toxiproxy đang chạy riêng (xem scenarios/H-README.md):
+npm run run-network -- --scenario=H --transport=sse
 ```
 
 Kết quả in ra console + ghi vào `results/raw/` (đầy đủ) và `results/processed/`
@@ -87,9 +90,11 @@ qua `NotificationService`, không chỉ riêng transport layer), đúng yêu c�
 - **Chạy trên 1 máy, `localhost`** — mọi số liệu là local/synthetic benchmark
   theo đúng Assumption A1 đã thống nhất từ đầu Phase 2, KHÔNG phải
   production-scale benchmark (Rule 10).
-- **Scenario H (Poor Network) không implement được** bằng Node.js thuần — lý
-  do chi tiết trong `scenarios/H-NOT-IMPLEMENTED.md`. Cần công cụ ngoài
-  (`tc netem`, Toxiproxy) — ngoài phạm vi hiện tại.
+- **Scenario H (Poor Network) dùng Toxiproxy thật** — xem
+  `scenarios/H-README.md` cho cách chạy. Thiết kế ĐỘC LẬP: chỉ
+  `runners/runNetworkScenario.ts` cần Toxiproxy đang chạy, 9 scenario còn lại
+  (A-G, I, J) và `run.ts`/`compareTransports.ts` hoàn toàn không bị ảnh hưởng
+  dù Toxiproxy có cài hay không.
 - **Scenario G (Slow Client)** chỉ mô phỏng "xử lý chậm ở tầng ứng dụng"
   (delay trước khi ghi nhận đã xử lý xong), KHÔNG mô phỏng backpressure thật
   ở tầng socket buffer — băng thông loopback quá cao để buffer đầy trong thời

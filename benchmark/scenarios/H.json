@@ -1,0 +1,33 @@
+{
+  "id": "H",
+  "name": "Poor Network",
+  "description": "Mô phỏng mạng kém qua Toxiproxy (KHÔNG phải setTimeout giả — đây là proxy TCP thật chèn latency/reset connection ở tầng network thật). Gồm 2 toxic: (1) latency ~400ms±150ms áp dụng liên tục suốt scenario trên chiều server->client; (2) reset_peer (ngắt kết nối đột ngột) với xác suất 5%/kết nối mới, CHỈ bật trong khoảng 20s-35s để mô phỏng giai đoạn mạng bất ổn xen giữa mạng bình thường. CHỈ chạy được khi Toxiproxy đang chạy (npm run run-network -- --scenario=H), không dùng qua run.ts thông thường.",
+  "seed": 1010,
+  "durationMs": 45000,
+  "subscriberCount": 30,
+  "postRate": { "mode": "fixed", "postsPerSecond": 0.5 },
+  "payloadSize": "small",
+  "network": {
+    "proxyName": "notification-lab-h",
+    "listen": "localhost:8666",
+    "upstream": "localhost:3000",
+    "toxics": [
+      {
+        "name": "h-latency",
+        "type": "latency",
+        "stream": "downstream",
+        "toxicity": 1.0,
+        "attributes": { "latency": 400, "jitter": 150 }
+      },
+      {
+        "name": "h-reset-peer",
+        "type": "reset_peer",
+        "stream": "downstream",
+        "toxicity": 0.05,
+        "attributes": { "timeout": 0 },
+        "enabledAtMs": 20000,
+        "disabledAtMs": 35000
+      }
+    ]
+  }
+}
