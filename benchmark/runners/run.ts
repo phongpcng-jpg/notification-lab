@@ -208,7 +208,10 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
-main().catch((err) => {
-  console.error("Benchmark thất bại:", err);
-  process.exit(1);
-});
+const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  main().catch((err) => {
+    console.error("Benchmark thất bại:", err);
+    process.exit(1);
+  });
+}
