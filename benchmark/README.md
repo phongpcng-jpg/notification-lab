@@ -56,7 +56,40 @@ npm run compare -- --scenario=A
 
 # Scenario H (Poor Network) — cần Toxiproxy đang chạy riêng (xem scenarios/H-README.md):
 npm run run-network -- --scenario=H --transport=sse
+
+# ── Chạy TOÀN BỘ 9 scenario × 4 transport × 3 lần lặp (mặc định), rồi tổng hợp báo cáo ──
+npm run run-all
+npm run report
+# -> ghi results/reports/final-report.json và final-report.md (số liệu THẬT)
+
+# Chạy nặng hơn (máy mạnh, môi trường của bạn) + gồm cả Scenario H:
+npm run run-all -- --repeats=5 --subscriber-scale=10 --duration-scale=2 --include-h
+npm run report
 ```
+
+### `runAll.ts` — chạy hàng loạt
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---|---|
+| `--scenarios=A,B,C` | 9 scenario (A-G,I,J) | Chọn tập scenario con |
+| `--transports=sse,websocket` | cả 4 transport | Chọn tập transport con |
+| `--repeats=N` | 3 | Số lần lặp mỗi scenario×transport (Rule repeatability) |
+| `--subscriber-scale=X` | 1 | Nhân `subscriberCount` mọi scenario lên X lần, giữ nguyên tỉ lệ tương đối giữa các scenario |
+| `--duration-scale=X` | 1 | Nhân `durationMs` mọi scenario lên X lần |
+| `--include-h` | tắt | Chạy thêm Scenario H qua Toxiproxy — **tách riêng có chủ đích**, không nằm trong lần chạy mặc định |
+
+### `generateFinalReport.ts` — tổng hợp thành báo cáo
+
+Đọc TOÀN BỘ file trong `results/processed/` (không quan tâm bạn chạy bằng
+`run.ts`, `run-all`, hay `runNetworkScenario.ts`), gộp theo (scenario,
+transport), tính trung bình + độ lệch chuẩn giữa các lần chạy, ghi ra:
+- `results/reports/final-report.json` — máy đọc được, dùng cho tool khác nếu cần
+- `results/reports/final-report.md` — bổ sung số liệu thật cho mục 9 của
+  `docs/final-report/FINAL-COMPARISON-REPORT.md` (không tự phán tốt/xấu —
+  chỉ trình bày số liệu đo được).
+
+Chạy lại `npm run report` bất cứ lúc nào sau khi có thêm kết quả mới — không
+cần chạy lại toàn bộ benchmark, chỉ cần results/processed/ có thêm file.
 
 Kết quả in ra console + ghi vào `results/raw/` (đầy đủ) và `results/processed/`
 (tóm tắt). Mỗi lần chạy là 1 file riêng (timestamp trong tên) — không ghi đè,

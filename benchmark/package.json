@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "run": "tsx runners/run.ts",
+    "run-all": "tsx runners/runAll.ts",
     "run-network": "tsx runners/runNetworkScenario.ts",
     "compare": "tsx runners/compareTransports.ts",
+    "report": "tsx runners/generateFinalReport.ts",
     "webpush-dispatch": "tsx runners/webPushDispatch.ts",
     "lint": "tsc --noEmit -p tsconfig.json"
   },

@@ -86,12 +86,16 @@ cd frontend && npm test   # vitest, unit test cho backoff util
 ```bash
 cd benchmark
 npm install
-npm run run -- --scenario=A --transport=sse
-npm run compare -- --scenario=A   # so sánh cả 4 transport tự động hoá được
+npm run run-all              # 9 scenario × 4 transport × 3 lần lặp (mặc định)
+npm run report                # tổng hợp -> results/reports/final-report.{json,md}
 ```
-Xem `benchmark/README.md` cho đầy đủ 10 scenario, cách override tham số, và
-giới hạn đã biết (Scenario H cần Toxiproxy — xem `scenarios/H-README.md`,
-Web Push benchmark riêng).
+Chạy nặng hơn / gồm cả Scenario H (cần Toxiproxy):
+```bash
+npm run run-all -- --repeats=5 --subscriber-scale=10 --duration-scale=2 --include-h
+npm run report
+```
+Xem `benchmark/README.md` cho đầy đủ flag, và `docs/final-report/FINAL-COMPARISON-REPORT.md`
+cho báo cáo template (lý thuyết đầy đủ, thực nghiệm chờ số liệu thật từ `npm run report`).
 
 ## 7. Running stress tests
 Dùng chung framework ở mục 6 — các scenario C (Massive Fan-out), E
@@ -129,13 +133,15 @@ notification-lab/
 ├── benchmark/        # framework benchmark hoàn chỉnh — CHƯA CÓ LẦN CHẠY THẬT
 │   ├── lib/             # apiClient, pickPublisher, metrics, report (dùng chung)
 │   ├── generators/       # 1 SimulatedClient/transport (4/5, Web Push riêng)
-│   ├── runners/            # run.ts, compareTransports.ts, webPushDispatch.ts
+│   ├── runners/            # run.ts, runAll.ts, runNetworkScenario.ts, compareTransports.ts,
+│   │                          webPushDispatch.ts, generateFinalReport.ts
 │   └── scenarios/            # 10/10 scenario config (A-J), H dùng Toxiproxy
 ├── research/          # báo cáo nghiên cứu lý thuyết (Track A)
 ├── docs/
 │   ├── architecture.md
 │   ├── adr/                 # Architectural Decision Records
-│   └── transport-reports/    # báo cáo riêng cho từng transport (5 file)
+│   ├── transport-reports/    # báo cáo riêng cho từng transport (5 file)
+│   └── final-report/           # báo cáo so sánh cuối cùng (template + số liệu thật khi có)
 └── README.md
 ```
 
