@@ -1,0 +1,10 @@
+{
+  "id": "D",
+  "name": "High-frequency",
+  "description": "Publisher đăng bài liên tục ở tần suất cao (mặc định 10 post/giây, override qua --posts-per-second=). Đo throughput và latency dưới tải sự kiện dồn dập liên tục (khác Burst — đây là tải đều, không phải đợt).",
+  "seed": 1004,
+  "durationMs": 30000,
+  "subscriberCount": 50,
+  "postRate": { "mode": "fixed", "postsPerSecond": 10 },
+  "payloadSize": "small"
+}

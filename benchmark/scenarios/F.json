@@ -1,0 +1,11 @@
+{
+  "id": "F",
+  "name": "Reconnection Storm",
+  "description": "Mô phỏng gián đoạn mạng/server: tại các mốc thời gian trong `reconnectStorm.atMs`, TOÀN BỘ subscriber bị ngắt và kết nối lại đồng loạt — đo khả năng phục hồi (thời gian catch-up, tỷ lệ lỗi khi reconnect đồng loạt). Có ý nghĩa nhất với SSE/WebSocket/Long Polling; với Short Polling gần như không có khái niệm 'reconnect' nên kết quả sẽ gần giống Scenario A.",
+  "seed": 1006,
+  "durationMs": 30000,
+  "subscriberCount": 100,
+  "postRate": { "mode": "fixed", "postsPerSecond": 0.5 },
+  "payloadSize": "small",
+  "reconnectStorm": { "enabled": true, "atMs": [15000] }
+}

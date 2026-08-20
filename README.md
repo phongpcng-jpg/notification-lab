@@ -4,16 +4,18 @@ Hệ thống thực nghiệm so sánh 5 kỹ thuật notification web (Short Pol
 Long Polling, SSE, WebSocket, Web Push) trên cùng một domain: đăng bài +
 follow.
 
-> **Trạng thái hiện tại: Phase 2 HOÀN THÀNH — cả 5/5 transport đã implement.**
-> Đã có: domain model, migration, CRUD (users/follows/posts), fan-out
-> notification, seed script quy mô lớn, frontend đầy đủ (chọn user, follow,
-> đăng bài, feed, transport selector cho cả 5 kỹ thuật), và **5 transport
-> hoàn chỉnh** (route, hook/client, tests, transport report riêng cho từng
-> loại trong `docs/transport-reports/`): Short Polling, Long Polling, SSE,
-> WebSocket (2 chiều thật, có ack), Web Push (offline/background delivery).
-> **Chưa có:** benchmark framework (Phase 9+), deploy free hosting (theo xác
-> nhận: để sau). Xem `docs/transport-reports/` cho chi tiết delivery
-> semantics và giới hạn đã biết của từng transport.
+> **Trạng thái hiện tại: Phase 2 (5/5 transport) + Benchmark Framework (Phase
+> 9-11) HOÀN THÀNH.**
+> Đã có: domain model, migration, CRUD, fan-out notification, seed script,
+> frontend đầy đủ 5 transport, và **benchmark framework hoàn chỉnh**: 4/5
+> transport tự động hoá được (Web Push benchmark riêng, giới hạn ghi rõ),
+> 9/10 scenario A-J implement được (Scenario H không khả thi bằng Node.js
+> thuần, ghi rõ lý do), thu thập metrics (latency percentile, delivery rate,
+> duplicate, error, reconnect), so sánh cross-transport tự động.
+> **CHƯA CÓ LẦN CHẠY THẬT NÀO** — sandbox viết code này không có network để
+> `npm install`. Mọi số liệu benchmark là `PENDING` cho tới khi bạn tự chạy.
+> **Chưa làm:** deploy free hosting (để sau theo xác nhận), báo cáo so sánh
+> cuối cùng (cần số liệu thật trước).
 
 ## 1. Requirements
 - Node.js ≥ 20 (đã test với v22)
@@ -80,11 +82,19 @@ cd frontend && npm test   # vitest, unit test cho backoff util
 ```
 
 ## 6. Running benchmarks
-Chưa implement — xem `benchmark/README.md`.
+```bash
+cd benchmark
+npm install
+npm run run -- --scenario=A --transport=sse
+npm run compare -- --scenario=A   # so sánh cả 4 transport tự động hoá được
+```
+Xem `benchmark/README.md` cho đầy đủ 10 scenario, cách override tham số, và
+giới hạn đã biết (Scenario H không khả thi, Web Push benchmark riêng).
 
 ## 7. Running stress tests
-Chưa implement — sẽ dùng chung benchmark runner ở trên với scenario nặng
-(Connection Storm, Fan-out lớn...).
+Dùng chung framework ở mục 6 — các scenario C (Massive Fan-out), E
+(Connection Storm), F (Reconnection Storm) chính là stress test. Tăng
+`--subscribers=` để đẩy tải lên cao hơn mức mặc định trong config.
 
 ## 8. Deployment
 Chưa làm ở phase này (theo xác nhận: local trước, nghiên cứu free hosting sau).
@@ -114,7 +124,11 @@ notification-lab/
 ├── frontend/        # React + Vite
 │   ├── public/sw.js      # Service Worker cho Web Push
 │   └── src/transports/   # 1 hook/module riêng cho mỗi transport + backoff dùng chung
-├── benchmark/        # scaffold, chưa implement (Phase 9+)
+├── benchmark/        # framework benchmark hoàn chỉnh — CHƯA CÓ LẦN CHẠY THẬT
+│   ├── lib/             # apiClient, pickPublisher, metrics, report (dùng chung)
+│   ├── generators/       # 1 SimulatedClient/transport (4/5, Web Push riêng)
+│   ├── runners/            # run.ts, compareTransports.ts, webPushDispatch.ts
+│   └── scenarios/            # 9/10 scenario config (A-J, trừ H)
 ├── research/          # báo cáo nghiên cứu lý thuyết (Track A)
 ├── docs/
 │   ├── architecture.md

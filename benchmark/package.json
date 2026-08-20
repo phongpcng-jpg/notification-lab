@@ -1,0 +1,21 @@
+{
+  "name": "notification-lab-benchmark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "run": "tsx runners/run.ts",
+    "compare": "tsx runners/compareTransports.ts",
+    "webpush-dispatch": "tsx runners/webPushDispatch.ts",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "tsx": "^4.19.1",
+    "@types/node": "^22.7.4",
+    "@types/ws": "^8.5.12"
+  }
+}

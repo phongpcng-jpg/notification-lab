@@ -1,0 +1,10 @@
+{
+  "id": "A",
+  "name": "Normal",
+  "description": "Tải bình thường: ít subscriber, publisher đăng bài không thường xuyên (~1 post/phút). Baseline để so sánh các scenario khác.",
+  "seed": 1001,
+  "durationMs": 120000,
+  "subscriberCount": 20,
+  "postRate": { "mode": "fixed", "postsPerSecond": 0.0167 },
+  "payloadSize": "small"
+}

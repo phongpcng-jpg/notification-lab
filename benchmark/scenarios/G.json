@@ -1,0 +1,11 @@
+{
+  "id": "G",
+  "name": "Slow Client",
+  "description": "Một tỉ lệ subscriber (`slowClients.ratio`) mô phỏng xử lý CHẬM sau khi nhận mỗi notification (`extraDelayMs`) trước khi coi là đã xử lý xong — đo ảnh hưởng lên latency đo được của riêng nhóm client chậm này (phân biệt qua `perClient[].isSlowClient` trong kết quả). LƯU Ý: đây là proxy cho 'xử lý chậm ở tầng ứng dụng', KHÔNG mô phỏng được backpressure thật ở tầng socket buffer (băng thông localhost quá cao để buffer đầy trong thời gian benchmark ngắn) — xem giới hạn trong benchmark/README.md.",
+  "seed": 1007,
+  "durationMs": 30000,
+  "subscriberCount": 50,
+  "postRate": { "mode": "fixed", "postsPerSecond": 1 },
+  "payloadSize": "small",
+  "slowClients": { "ratio": 0.3, "extraDelayMs": 3000 }
+}

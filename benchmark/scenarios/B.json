@@ -1,0 +1,10 @@
+{
+  "id": "B",
+  "name": "Burst",
+  "description": "Publisher tạo nhiều post gần như đồng thời (mặc định 100, override qua --burst-size=1000 hoặc 10000) — đo hành vi khi 1 subscriber nhận rất nhiều notification cùng lúc: queue behavior, latency, duplicate handling.",
+  "seed": 1002,
+  "durationMs": 70000,
+  "subscriberCount": 20,
+  "postRate": { "mode": "burst", "burstSize": 100, "burstIntervalMs": 60000 },
+  "payloadSize": "small"
+}

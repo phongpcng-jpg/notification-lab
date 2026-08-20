@@ -1,0 +1,13 @@
+{
+  "id": "J",
+  "name": "Mixed Workload",
+  "description": "Kết hợp nhiều yếu tố cùng lúc để mô phỏng workload gần với thực tế production hơn: nhiều subscriber, tốc độ post dạng burst, connection storm lúc bắt đầu, reconnect storm giữa chừng, một phần subscriber là slow client, payload cỡ trung bình. Đây là scenario quan trọng nhất để đánh giá hành vi tổng hợp — các scenario A-I ở trên cô lập từng yếu tố riêng lẻ để dễ debug, còn J kiểm tra chúng cộng dồn.",
+  "seed": 1009,
+  "durationMs": 45000,
+  "subscriberCount": 100,
+  "postRate": { "mode": "burst", "burstSize": 20, "burstIntervalMs": 15000 },
+  "payloadSize": "medium",
+  "connectionStorm": { "enabled": true, "rampUpMs": 3000 },
+  "reconnectStorm": { "enabled": true, "atMs": [20000] },
+  "slowClients": { "ratio": 0.2, "extraDelayMs": 1500 }
+}

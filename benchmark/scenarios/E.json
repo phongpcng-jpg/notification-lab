@@ -1,0 +1,11 @@
+{
+  "id": "E",
+  "name": "Connection Storm",
+  "description": "Toàn bộ subscriber mở kết nối trong khoảng thời gian rất ngắn (rampUpMs) thay vì rải đều — đo overhead handshake/connection establishment khi nhiều client cùng kết nối gần như đồng thời (ví dụ: sau khi server restart, hoặc giờ cao điểm).",
+  "seed": 1005,
+  "durationMs": 30000,
+  "subscriberCount": 300,
+  "postRate": { "mode": "fixed", "postsPerSecond": 0.2 },
+  "payloadSize": "small",
+  "connectionStorm": { "enabled": true, "rampUpMs": 2000 }
+}

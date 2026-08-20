@@ -1,0 +1,10 @@
+{
+  "id": "C",
+  "name": "Massive Multi-user Fan-out",
+  "description": "1 publisher với rất nhiều follower — mỗi post fan-out tới toàn bộ subscriberCount. Mặc định 1000 (giới hạn thực tế của máy dev/local); để test đúng quy mô 100,000 theo yêu cầu gốc: seed lại backend với --users=100000 --avgFollows=cao rồi chạy --scenario=C --subscribers=100000 (cảnh báo: sẽ tốn nhiều RAM/file descriptor trên máy chạy benchmark).",
+  "seed": 1003,
+  "durationMs": 30000,
+  "subscriberCount": 1000,
+  "postRate": { "mode": "fixed", "postsPerSecond": 0.1 },
+  "payloadSize": "small"
+}

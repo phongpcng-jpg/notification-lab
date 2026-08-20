@@ -1,0 +1,10 @@
+{
+  "id": "I",
+  "name": "Large Payload",
+  "description": "Payload post ở kích thước lớn nhất (`payloadSize: large` ~3000 ký tự, xem benchmark/lib/payload.ts) — đo ảnh hưởng của payload size lên latency/throughput mỗi transport, đặc biệt SSE (chỉ text UTF-8) và Web Push (giới hạn ~4KB tuỳ Push Service, ghi trong research report). Chạy lại với scenarios A/D cùng subscriberCount để so sánh trực tiếp small vs large ở cùng workload khác.",
+  "seed": 1008,
+  "durationMs": 30000,
+  "subscriberCount": 20,
+  "postRate": { "mode": "fixed", "postsPerSecond": 0.5 },
+  "payloadSize": "large"
+}
