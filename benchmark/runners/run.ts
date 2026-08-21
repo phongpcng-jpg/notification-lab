@@ -80,8 +80,6 @@ export async function runScenario(
     });
   });
 
-  const startedAt = new Date();
-
   // ── Kết nối clients: connection storm (ramp-up) hoặc mở đồng loạt ──
   if (config.connectionStorm?.enabled) {
     const rampUpMs = config.connectionStorm.rampUpMs;
@@ -99,6 +97,16 @@ export async function runScenario(
 
   // Grace period để catch-up (nếu có) hoàn tất trước khi bắt đầu đo.
   await sleep(500);
+
+  // Các notification nhận được trong grace period là dữ liệu catch-up tồn tại
+  // trước khi benchmark bắt đầu. Không tính chúng vào delivery/latency của
+  // workload hiện tại. Xóa chúng ngay trước measurement boundary.
+  for (const client of clients) {
+    client.events.length = 0;
+  }
+
+  // Measurement bắt đầu SAU khi các kết nối đã ổn định và catch-up đã được loại bỏ.
+  const startedAt = new Date();
 
   // ── Reconnect storm: lên lịch disconnect+reconnect đồng loạt tại các mốc thời gian ──
   const reconnectTimers: ReturnType<typeof setTimeout>[] = [];
