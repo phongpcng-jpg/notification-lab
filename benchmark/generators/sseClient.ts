@@ -1,4 +1,6 @@
 import http from "node:http";
+import https from "node:https";
+import type { ClientRequest } from "node:http";
 import { apiBaseUrl } from "../lib/apiClient.js";
 import type { ReceivedEvent } from "../lib/types.js";
 import type { SimulatedClient, SimulatedClientOptions } from "./simulatedClient.js";
@@ -18,7 +20,7 @@ export class SseClient implements SimulatedClient {
 
   private lastEventId = 0;
   private stopped = true;
-  private req: http.ClientRequest | null = null;
+  private req: ClientRequest | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly extraDelayMs: number;
 
@@ -50,23 +52,33 @@ export class SseClient implements SimulatedClient {
       this.lastEventId ? `&lastEventId=${this.lastEventId}` : ""
     }`;
 
-    const req = http.request(
-      { host: base.hostname, port: base.port, path, method: "GET" },
-      (res) => {
-        let buffer = "";
-        res.on("data", (chunk: Buffer) => {
-          buffer += chunk.toString("utf-8");
-          let idx: number;
-          while ((idx = buffer.indexOf("\n\n")) !== -1) {
-            const frame = buffer.slice(0, idx);
-            buffer = buffer.slice(idx + 2);
-            if (frame.startsWith(":")) continue; // heartbeat/connected comment
-            this.handleFrame(frame);
-          }
-        });
-        res.on("error", () => this.handleDisconnect());
-      }
-    );
+    const requestOptions = {
+      hostname: base.hostname,
+      port: base.port || undefined,
+      path,
+      method: "GET",
+      headers: {
+        Accept: "text/event-stream",
+        "Cache-Control": "no-cache",
+      },
+    };
+
+    const request = base.protocol === "https:" ? https.request : http.request;
+    const req = request(requestOptions, (res) => {
+      let buffer = "";
+      res.on("data", (chunk: Buffer) => {
+        buffer += chunk.toString("utf-8");
+        let idx: number;
+        while ((idx = buffer.indexOf("\n\n")) !== -1) {
+          const frame = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          if (frame.startsWith(":")) continue; // heartbeat/connected comment
+          this.handleFrame(frame);
+        }
+      });
+      res.on("error", () => this.handleDisconnect());
+      res.on("end", () => this.handleDisconnect());
+    });
     req.on("error", () => this.handleDisconnect());
     req.end();
     this.req = req;
