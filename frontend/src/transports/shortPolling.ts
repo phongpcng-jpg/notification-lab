@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { API_BASE_URL } from "../config.js";
 import { computeBackoffDelay } from "./backoff.js";
 import type { PolledNotification } from "./types.js";
 
@@ -15,17 +16,10 @@ const BASE_RETRY_DELAY_MS = 1_000;
 /**
  * SHORT POLLING client.
  *
- * Thiết kế lifecycle:
- * - Dùng recursive setTimeout (không dùng setInterval) để đảm bảo request
- *   tiếp theo chỉ bắt đầu SAU KHI request trước đã xong — tránh chồng request
- *   khi server chậm hơn interval cấu hình (Rule Section 40: không reconnect
- *   kiểu setInterval vô điều kiện).
- * - Khi thành công: dùng `suggestedIntervalMs` server trả về làm delay tiếp theo,
- *   reset backoff attempt counter về 0.
- * - Khi lỗi: dùng exponential backoff + jitter (computeBackoffDelay), KHÔNG
- *   retry ngay lập tức, để tránh làm nặng thêm server đang gặp sự cố.
- * - Cursor `after` lưu ở client (useRef, không phải state) — vì tăng liên tục
- *   theo mỗi lần poll, không cần re-render khi nó đổi một mình.
+ * Recursive setTimeout đảm bảo request kế tiếp chỉ bắt đầu sau khi request
+ * trước đã hoàn tất. Khi thành công dùng interval server gợi ý; khi lỗi dùng
+ * exponential backoff + jitter. Cursor `after` được giữ ở client để bảo đảm
+ * at-least-once delivery và client tự dedupe theo notification id.
  */
 export function useShortPolling(userId: number | null, enabled: boolean) {
   const [notifications, setNotifications] = useState<PolledNotification[]>([]);
@@ -49,7 +43,7 @@ export function useShortPolling(userId: number | null, enabled: boolean) {
 
     try {
       const res = await fetch(
-        `/api/notifications/poll?userId=${userId}&after=${afterRef.current}`
+        `${API_BASE_URL}/notifications/poll?userId=${userId}&after=${afterRef.current}`
       );
       if (!res.ok) {
         throw new Error(`Poll failed: HTTP ${res.status}`);
@@ -58,10 +52,9 @@ export function useShortPolling(userId: number | null, enabled: boolean) {
 
       if (body.notifications.length > 0) {
         setNotifications((prev) => {
-          // Dedupe theo id — cần thiết vì delivery semantics là at-least-once
           const seen = new Set(prev.map((n) => n.id));
           const fresh = body.notifications.filter((n) => !seen.has(n.id));
-          return [...fresh.reverse(), ...prev]; // mới nhất lên đầu
+          return [...fresh.reverse(), ...prev];
         });
       }
       afterRef.current = body.nextAfter;
@@ -98,8 +91,6 @@ export function useShortPolling(userId: number | null, enabled: boolean) {
     clearScheduled();
   }, []);
 
-  // Tự stop khi unmount hoặc khi `enabled`/`userId` đổi, tránh leak timeout
-  // giữa các lần chuyển transport/chuyển user.
   useEffect(() => {
     if (enabled && userId) {
       start();

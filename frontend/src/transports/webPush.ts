@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { API_BASE_URL } from "../config.js";
 
 export type WebPushStatus =
   | "idle"
@@ -58,7 +59,7 @@ export function useWebPush(userId: number | null) {
         return;
       }
 
-      const keyRes = await fetch("/api/push/vapid-public-key");
+      const keyRes = await fetch(`${API_BASE_URL}/push/vapid-public-key`);
       const { publicKey } = await keyRes.json();
       if (!publicKey) {
         setLastError(
@@ -74,7 +75,7 @@ export function useWebPush(userId: number | null) {
         applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
       });
 
-      await fetch("/api/push/subscribe", {
+      await fetch(`${API_BASE_URL}/push/subscribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -95,7 +96,7 @@ export function useWebPush(userId: number | null) {
       const registration = await navigator.serviceWorker.getRegistration();
       const pushSubscription = await registration?.pushManager.getSubscription();
       if (pushSubscription) {
-        await fetch("/api/push/unsubscribe", {
+        await fetch(`${API_BASE_URL}/push/unsubscribe`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: pushSubscription.endpoint }),

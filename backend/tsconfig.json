@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "rootDir": "src",
     "outDir": "dist",
     "strict": true,
     "esModuleInterop": true,
@@ -11,5 +12,6 @@
     "declaration": false,
     "sourceMap": true
   },
-  "include": ["src", "scripts"]
+  "include": ["src"],
+  "exclude": ["dist", "**/*.test.ts"]
 }
