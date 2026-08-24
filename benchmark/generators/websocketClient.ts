@@ -31,7 +31,7 @@ export class WebSocketClient implements SimulatedClient {
 
   async connect(): Promise<void> {
     this.stopped = false;
-    this.open(false);
+    await this.open(false);
   }
 
   async disconnect(): Promise<void> {
@@ -41,19 +41,35 @@ export class WebSocketClient implements SimulatedClient {
     this.socket = null;
   }
 
-  private open(isReconnect: boolean): void {
-    if (this.stopped) return;
+  private open(isReconnect: boolean): Promise<void> {
+    if (this.stopped) return Promise.resolve();
     if (isReconnect) this.reconnectCount++;
 
     const socket = new WebSocket(`${wsBaseUrl()}/ws?userId=${this.userId}&after=${this.after}`);
     this.socket = socket;
 
-    socket.on("message", (raw) => {
-      void this.handleMessage(raw as Buffer, socket);
-    });
-    socket.on("close", () => this.handleDisconnect());
-    socket.on("error", () => {
-      this.errorCount++;
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const resolveOnce = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const rejectOnce = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      };
+
+      socket.once("open", resolveOnce);
+      socket.on("message", (raw) => {
+        void this.handleMessage(raw as Buffer, socket);
+      });
+      socket.on("close", () => this.handleDisconnect());
+      socket.on("error", (err) => {
+        this.errorCount++;
+        rejectOnce(err instanceof Error ? err : new Error(String(err)));
+      });
     });
   }
 
@@ -69,16 +85,14 @@ export class WebSocketClient implements SimulatedClient {
 
     if (this.extraDelayMs > 0) await sleep(this.extraDelayMs);
 
-    const now = Date.now();
+    const receivedAtMonoMs = performance.now();
     this.events.push({
       notificationId: msg.data.id,
-      postedAtMs: msg.data.createdAt * 1000,
-      receivedAtMs: now,
+      receivedAtMonoMs,
+      serverCreatedAtMs: msg.data.createdAt * 1000,
     });
     this.after = Math.max(this.after, msg.data.id);
 
-    // Gửi ack giống frontend thật — để đo đúng chi phí round-trip 2 chiều
-    // của WebSocket khi benchmark, không chỉ đo 1 chiều server->client.
     if (socket.readyState === socket.OPEN) {
       socket.send(JSON.stringify({ type: "ack", notificationId: msg.data.id }));
     }
@@ -86,7 +100,7 @@ export class WebSocketClient implements SimulatedClient {
 
   private handleDisconnect(): void {
     if (this.stopped) return;
-    this.reconnectTimer = setTimeout(() => this.open(true), 1000);
+    this.reconnectTimer = setTimeout(() => void this.open(true), 1000);
   }
 }
 
