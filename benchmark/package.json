@@ -13,6 +13,7 @@
     "lint": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "dotenv": "^16.4.7",
     "ws": "^8.18.0"
   },
   "devDependencies": {
