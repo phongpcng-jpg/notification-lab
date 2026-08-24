@@ -87,7 +87,9 @@ export function useWebPush(userId: number | null, enabled: boolean) {
         ids: response.notifications.map((notification) => notification.id),
       });
       mergeNotifications(response.notifications);
-      afterRef.current = Math.max(afterRef.current, response.nextAfter);
+      if (Number.isFinite(response.nextAfter)) {
+        afterRef.current = Math.max(afterRef.current, response.nextAfter);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(WEB_PUSH_TRACE, "history load failed", { userId, message });
@@ -111,7 +113,9 @@ export function useWebPush(userId: number | null, enabled: boolean) {
         ids: response.notifications.map((notification) => notification.id),
       });
       mergeNotifications(response.notifications);
-      afterRef.current = Math.max(afterRef.current, response.nextAfter);
+      if (Number.isFinite(response.nextAfter)) {
+        afterRef.current = Math.max(afterRef.current, response.nextAfter);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(WEB_PUSH_TRACE, "recovery failed", {
@@ -145,8 +149,6 @@ export function useWebPush(userId: number | null, enabled: boolean) {
         controller: Boolean(navigator.serviceWorker.controller),
       });
 
-      // BẮT BUỘC gọi trong ngữ cảnh user gesture (hàm này được gọi từ
-      // onClick của nút "Bật thông báo đẩy" ở App.tsx).
       const permission = await Notification.requestPermission();
       trace("notification permission", { userId, permission });
       if (permission !== "granted") {
