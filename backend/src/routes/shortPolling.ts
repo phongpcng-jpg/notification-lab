@@ -40,12 +40,14 @@ export async function shortPollingRoutes(app: FastifyInstance) {
     recordDeliveryBatch(rows, "short_polling", requestReceivedAt);
 
     const nextAfter = rows.length > 0 ? rows[rows.length - 1].id : after;
+    const serverSentAtMs = Date.now();
 
     return reply.send({
       notifications: rows,
       nextAfter,
       suggestedIntervalMs: config.shortPollSuggestedIntervalMs,
       serverTime: requestReceivedAt,
+      serverSentAtMs,
     });
   });
 }
