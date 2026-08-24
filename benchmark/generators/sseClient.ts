@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import type { ClientRequest } from "node:http";
+import type { IncomingMessage } from "node:http";
 import { apiBaseUrl } from "../lib/apiClient.js";
 import type { ReceivedEvent } from "../lib/types.js";
 import type { SimulatedClient, SimulatedClientOptions } from "./simulatedClient.js";
@@ -17,10 +18,10 @@ export class SseClient implements SimulatedClient {
     const requestOptions={hostname:base.hostname,port:base.port||undefined,path,method:"GET",headers:{Accept:"text/event-stream","Cache-Control":"no-cache"}};
     const request=base.protocol==="https:"?https.request:http.request;
     return new Promise<void>((resolve,reject)=>{let settled=false;const resolveOnce=()=>{if(settled)return;settled=true;resolve();};const rejectOnce=(e:Error)=>{if(settled)return;settled=true;reject(e);};
-      const req=request(requestOptions,(res)=>{if(res.statusCode!==200){res.resume();const e=new Error(`SSE HTTP ${res.statusCode??"unknown"}`);rejectOnce(e);this.handleDisconnect();return;}resolveOnce();let buffer="";res.on("data",(chunk:Buffer)=>{buffer+=chunk.toString("utf-8");let idx:number;while((idx=buffer.indexOf("\n\n"))!==-1){const frame=buffer.slice(0,idx);buffer=buffer.slice(idx+2);if(frame.startsWith(":"))continue;this.handleFrame(frame);}});res.on("error",()=>this.handleDisconnect());res.on("end",()=>this.handleDisconnect());});
+      const req=request(requestOptions,(res:IncomingMessage)=>{if(res.statusCode!==200){res.resume();const e=new Error(`SSE HTTP ${res.statusCode??"unknown"}`);rejectOnce(e);this.handleDisconnect();return;}resolveOnce();let buffer="";res.on("data",(chunk:Buffer)=>{buffer+=chunk.toString("utf-8");let idx:number;while((idx=buffer.indexOf("\n\n"))!==-1){const frame=buffer.slice(0,idx);buffer=buffer.slice(idx+2);if(frame.startsWith(":"))continue;this.handleFrame(frame);}});res.on("error",()=>this.handleDisconnect());res.on("end",()=>this.handleDisconnect());});
       req.on("error",e=>{rejectOnce(e instanceof Error?e:new Error(String(e)));this.handleDisconnect();});req.end();this.req=req;});
   }
-  private async handleFrame(frame:string):Promise<void>{const dataLine=frame.split("\n").find(l=>l.startsWith("data: "));if(!dataLine)return;try{const payload=JSON.parse(dataLine.slice(6)) as SsePayload;if(this.extraDelayMs>0)await sleep(this.extraDelayMs);const receivedAtMonoMs=performance.now();this.events.push({notificationId:payload.id,receivedAtMonoMs,serverCreatedAtMs:payload.createdAt*1000,serverSentAtMs:payload.serverSentAtMs});this.lastEventId=Math.max(this.lastEventId,payload.id);}catch{this.errorCount++;}}
+  private async handleFrame(frame:string):Promise<void>{const dataLine=frame.split("\n").find(l=>l.startsWith("data: "));if(!dataLine)return;try{const payload=JSON.parse(dataLine.slice(6)) as SsePayload;const receivedAtMonoMs=performance.now();if(this.extraDelayMs>0)await sleep(this.extraDelayMs);this.events.push({notificationId:payload.id,receivedAtMonoMs,serverCreatedAtMs:payload.createdAt*1000,serverSentAtMs:payload.serverSentAtMs});this.lastEventId=Math.max(this.lastEventId,payload.id);}catch{this.errorCount++;}}
   private handleDisconnect():void{if(this.stopped)return;this.errorCount++;this.reconnectTimer=setTimeout(()=>void this.open(true),1000);}
 }
 function sleep(ms:number):Promise<void>{return new Promise(resolve=>setTimeout(resolve,ms));}
