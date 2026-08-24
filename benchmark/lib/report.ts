@@ -29,8 +29,6 @@ export function writeScenarioResult(result: ScenarioResult): {
   const rawPath = join(rawDir, `${slug}.json`);
   writeFileSync(rawPath, JSON.stringify(result, null, 2), "utf-8");
 
-  // processed = raw nhưng bỏ perClient chi tiết (giữ lại số lượng client,
-  // không giữ từng event) — vẫn đủ để dựng bảng so sánh, nhẹ hơn nhiều.
   const { perClient, ...summary } = result;
   const processed = {
     ...summary,
@@ -43,8 +41,18 @@ export function writeScenarioResult(result: ScenarioResult): {
   return { rawPath, processedPath };
 }
 
+function printLatency(label: string, stats: ScenarioResult["e2eLatency"]): void {
+  if (!stats) {
+    console.log(`${label}: N/A — no measured samples`);
+    return;
+  }
+  console.log(
+    `${label}: min=${stats.minMs} p50=${stats.p50Ms} p90=${stats.p90Ms} ` +
+      `p95=${stats.p95Ms} p99=${stats.p99Ms} max=${stats.maxMs} mean=${stats.meanMs}`
+  );
+}
+
 export function printSummary(result: ScenarioResult): void {
-  const lat = result.latency;
   console.log("\n" + "=".repeat(60));
   console.log(`Scenario: ${result.scenarioId} — ${result.scenarioName}`);
   console.log(`Transport: ${result.transport}`);
@@ -65,13 +73,7 @@ export function printSummary(result: ScenarioResult): void {
   );
   console.log(`Connection errors: ${result.totalConnectionErrors}`);
   console.log(`Reconnects: ${result.totalReconnects}`);
-  if (lat) {
-    console.log(
-      `Latency (ms): min=${lat.minMs} p50=${lat.p50Ms} p90=${lat.p90Ms} ` +
-        `p95=${lat.p95Ms} p99=${lat.p99Ms} max=${lat.maxMs} mean=${lat.meanMs}`
-    );
-  } else {
-    console.log("Latency (ms): N/A — not measured (không có event nào nhận được)");
-  }
+  printLatency("E2E Latency (ms)", result.e2eLatency);
+  printLatency("Server Delivery Latency (ms)", result.serverDeliveryLatency);
   console.log("=".repeat(60) + "\n");
 }
