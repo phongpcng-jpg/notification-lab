@@ -27,4 +27,7 @@ export const config = {
   wsHeartbeatMs: Number(process.env.WS_HEARTBEAT_MS ?? 20_000),
 
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+
+  // Internal API used by the benchmark to read server-side delivery metrics.
+  benchmarkApiKey: process.env.BENCHMARK_API_KEY ?? "",
 };
