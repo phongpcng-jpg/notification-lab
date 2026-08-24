@@ -33,7 +33,7 @@ export class SseClient implements SimulatedClient {
 
   async connect(): Promise<void> {
     this.stopped = false;
-    this.open(false);
+    await this.open(false);
   }
 
   async disconnect(): Promise<void> {
@@ -43,8 +43,8 @@ export class SseClient implements SimulatedClient {
     this.req = null;
   }
 
-  private open(isReconnect: boolean): void {
-    if (this.stopped) return;
+  private open(isReconnect: boolean): Promise<void> {
+    if (this.stopped) return Promise.resolve();
     if (isReconnect) this.reconnectCount++;
 
     const base = new URL(apiBaseUrl());
@@ -64,24 +64,53 @@ export class SseClient implements SimulatedClient {
     };
 
     const request = base.protocol === "https:" ? https.request : http.request;
-    const req = request(requestOptions, (res) => {
-      let buffer = "";
-      res.on("data", (chunk: Buffer) => {
-        buffer += chunk.toString("utf-8");
-        let idx: number;
-        while ((idx = buffer.indexOf("\n\n")) !== -1) {
-          const frame = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 2);
-          if (frame.startsWith(":")) continue; // heartbeat/connected comment
-          this.handleFrame(frame);
+
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const resolveOnce = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const rejectOnce = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      };
+
+      const req = request(requestOptions, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          const err = new Error(`SSE HTTP ${res.statusCode ?? "unknown"}`);
+          rejectOnce(err);
+          this.handleDisconnect();
+          return;
         }
+
+        resolveOnce();
+
+        let buffer = "";
+        res.on("data", (chunk: Buffer) => {
+          buffer += chunk.toString("utf-8");
+          let idx: number;
+          while ((idx = buffer.indexOf("\n\n")) !== -1) {
+            const frame = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            if (frame.startsWith(":")) continue;
+            this.handleFrame(frame);
+          }
+        });
+        res.on("error", () => this.handleDisconnect());
+        res.on("end", () => this.handleDisconnect());
       });
-      res.on("error", () => this.handleDisconnect());
-      res.on("end", () => this.handleDisconnect());
+
+      req.on("error", (err) => {
+        rejectOnce(err instanceof Error ? err : new Error(String(err)));
+        this.handleDisconnect();
+      });
+      req.end();
+      this.req = req;
     });
-    req.on("error", () => this.handleDisconnect());
-    req.end();
-    this.req = req;
   }
 
   private async handleFrame(frame: string): Promise<void> {
@@ -90,11 +119,11 @@ export class SseClient implements SimulatedClient {
     try {
       const payload = JSON.parse(dataLine.slice("data: ".length)) as SsePayload;
       if (this.extraDelayMs > 0) await sleep(this.extraDelayMs);
-      const now = Date.now();
+      const receivedAtMonoMs = performance.now();
       this.events.push({
         notificationId: payload.id,
-        postedAtMs: payload.createdAt * 1000,
-        receivedAtMs: now,
+        receivedAtMonoMs,
+        serverCreatedAtMs: payload.createdAt * 1000,
       });
       this.lastEventId = Math.max(this.lastEventId, payload.id);
     } catch {
@@ -105,7 +134,7 @@ export class SseClient implements SimulatedClient {
   private handleDisconnect(): void {
     if (this.stopped) return;
     this.errorCount++;
-    this.reconnectTimer = setTimeout(() => this.open(true), 1000);
+    this.reconnectTimer = setTimeout(() => void this.open(true), 1000);
   }
 }
 
