@@ -61,6 +61,7 @@ export async function postRoutes(app: FastifyInstance) {
       return reply.status(201).send({
         post,
         eventId,
+        notificationIds,
         notificationCount: notificationIds.length,
         recipientIds,
       });
