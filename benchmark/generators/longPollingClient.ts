@@ -14,7 +14,7 @@ export class LongPollingClient implements SimulatedClient {
   readonly isSlowClient: boolean;
   readonly events: ReceivedEvent[] = [];
   errorCount = 0;
-  reconnectCount = 0; // long polling luôn "mở lại request" — không tính là reconnect thật
+  reconnectCount = 0;
 
   private after = 0;
   private stopped = true;
@@ -53,19 +53,19 @@ export class LongPollingClient implements SimulatedClient {
       if (this.extraDelayMs > 0 && body.notifications.length > 0) {
         await sleep(this.extraDelayMs);
       }
-      const now = Date.now();
+      const receivedAtMonoMs = performance.now();
       for (const n of body.notifications) {
         this.events.push({
           notificationId: n.id,
-          postedAtMs: n.created_at * 1000,
-          receivedAtMs: now,
+          receivedAtMonoMs,
+          serverCreatedAtMs: n.created_at * 1000,
         });
       }
       this.after = body.nextAfter;
 
       if (!this.stopped) void this.loop();
     } catch (err) {
-      if (controller.signal.aborted) return; // do disconnect() chủ động — không tính lỗi
+      if (controller.signal.aborted) return;
       this.errorCount++;
       if (!this.stopped) {
         setTimeout(() => void this.loop(), 1000);
