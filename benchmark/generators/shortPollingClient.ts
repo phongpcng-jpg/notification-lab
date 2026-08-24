@@ -14,7 +14,7 @@ export class ShortPollingClient implements SimulatedClient {
   readonly isSlowClient: boolean;
   readonly events: ReceivedEvent[] = [];
   errorCount = 0;
-  reconnectCount = 0; // short polling không có khái niệm "reconnect" — luôn 0
+  reconnectCount = 0;
 
   private after = 0;
   private stopped = true;
@@ -48,16 +48,14 @@ export class ShortPollingClient implements SimulatedClient {
       const body = (await res.json()) as PollResponse;
 
       if (this.extraDelayMs > 0 && body.notifications.length > 0) {
-        // Slow client: mô phỏng xử lý chậm TRƯỚC KHI ghi nhận đã nhận —
-        // đẩy lùi receivedAtMs, ảnh hưởng trực tiếp tới latency đo được.
         await sleep(this.extraDelayMs);
       }
-      const now = Date.now();
+      const receivedAtMonoMs = performance.now();
       for (const n of body.notifications) {
         this.events.push({
           notificationId: n.id,
-          postedAtMs: n.created_at * 1000,
-          receivedAtMs: now,
+          receivedAtMonoMs,
+          serverCreatedAtMs: n.created_at * 1000,
         });
       }
       this.after = body.nextAfter;
