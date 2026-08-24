@@ -57,18 +57,15 @@ export interface ScenarioResult {
   requestedSubscriberCount: number;
   actualSubscriberCount: number;
   postsCreated: number;
-  /** = postsCreated * actualSubscriberCount (fan-out lý thuyết, KHÔNG tính duplicate) */
   totalNotificationsExpected: number;
-  /** Tổng event nhận được, tính cả duplicate */
   totalEventsReceivedRaw: number;
-  /** Đã loại duplicate theo (clientIndex, notificationId) */
   totalEventsReceivedUnique: number;
   totalDuplicates: number;
-  /** unique / expected — 1.0 nghĩa là mọi client nhận đủ đúng 1 lần mọi notification kỳ vọng */
   deliveryRate: number | null;
   totalConnectionErrors: number;
   totalReconnects: number;
-  latency: PercentileStats | null;
+  e2eLatency: PercentileStats | null;
+  serverDeliveryLatency: PercentileStats | null;
   perClient: PerClientSummary[];
 }
 
@@ -82,11 +79,17 @@ export function buildScenarioResult(params: {
   publisherId: number;
   requestedSubscriberCount: number;
   postsCreated: number;
+  e2eLatencySamplesMs: number[];
+  serverDeliveryLatencySamplesMs: number[];
   perClient: Array<{
     clientIndex: number;
     userId: number;
     isSlowClient: boolean;
-    events: Array<{ notificationId: number; postedAtMs: number; receivedAtMs: number }>;
+    events: Array<{
+      notificationId: number;
+      receivedAtMonoMs: number;
+      serverCreatedAtMs: number;
+    }>;
     errorCount: number;
     reconnectCount: number;
   }>;
@@ -94,7 +97,6 @@ export function buildScenarioResult(params: {
   const actualSubscriberCount = params.perClient.length;
   const totalNotificationsExpected = params.postsCreated * actualSubscriberCount;
 
-  const allLatencies: number[] = [];
   let totalRaw = 0;
   let totalUnique = 0;
   let totalDuplicates = 0;
@@ -110,7 +112,6 @@ export function buildScenarioResult(params: {
         dup++;
       } else {
         seen.add(e.notificationId);
-        allLatencies.push(e.receivedAtMs - e.postedAtMs);
       }
     }
     totalUnique += seen.size;
@@ -153,7 +154,8 @@ export function buildScenarioResult(params: {
       totalNotificationsExpected > 0 ? totalUnique / totalNotificationsExpected : null,
     totalConnectionErrors: totalErrors,
     totalReconnects,
-    latency: computePercentiles(allLatencies),
+    e2eLatency: computePercentiles(params.e2eLatencySamplesMs),
+    serverDeliveryLatency: computePercentiles(params.serverDeliveryLatencySamplesMs),
     perClient: perClientSummary,
   };
 }
