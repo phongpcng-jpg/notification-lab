@@ -2,78 +2,8 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ScenarioResult } from "./metrics.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const RESULTS_ROOT = join(__dirname, "..", "results");
-
-function timestampSlug(): string {
-  return new Date().toISOString().replace(/[:.]/g, "-");
-}
-
-/**
- * Ghi CẢ 2 bản: raw (đầy đủ per-client event list — nặng nhưng đầy đủ để
- * điều tra lại sau) và processed (chỉ số liệu tổng hợp — nhẹ, dùng để so
- * sánh nhanh giữa các lần chạy). Rule 50 — raw data must be preserved.
- */
-export function writeScenarioResult(result: ScenarioResult): {
-  rawPath: string;
-  processedPath: string;
-} {
-  const slug = `${result.scenarioId}-${result.transport}-${timestampSlug()}`;
-
-  const rawDir = join(RESULTS_ROOT, "raw");
-  const processedDir = join(RESULTS_ROOT, "processed");
-  mkdirSync(rawDir, { recursive: true });
-  mkdirSync(processedDir, { recursive: true });
-
-  const rawPath = join(rawDir, `${slug}.json`);
-  writeFileSync(rawPath, JSON.stringify(result, null, 2), "utf-8");
-
-  const { perClient, ...summary } = result;
-  const processed = {
-    ...summary,
-    perClientCount: perClient.length,
-    slowClientCount: perClient.filter((c) => c.isSlowClient).length,
-  };
-  const processedPath = join(processedDir, `${slug}.json`);
-  writeFileSync(processedPath, JSON.stringify(processed, null, 2), "utf-8");
-
-  return { rawPath, processedPath };
-}
-
-function printLatency(label: string, stats: ScenarioResult["e2eLatency"]): void {
-  if (!stats) {
-    console.log(`${label}: N/A — no measured samples`);
-    return;
-  }
-  console.log(
-    `${label}: min=${stats.minMs} p50=${stats.p50Ms} p90=${stats.p90Ms} ` +
-      `p95=${stats.p95Ms} p99=${stats.p99Ms} max=${stats.maxMs} mean=${stats.meanMs}`
-  );
-}
-
-export function printSummary(result: ScenarioResult): void {
-  console.log("\n" + "=".repeat(60));
-  console.log(`Scenario: ${result.scenarioId} — ${result.scenarioName}`);
-  console.log(`Transport: ${result.transport}`);
-  console.log(`Publisher: user#${result.publisherId}`);
-  console.log(
-    `Subscribers: ${result.actualSubscriberCount} thực tế / ${result.requestedSubscriberCount} yêu cầu`
-  );
-  console.log(`Posts created: ${result.postsCreated}`);
-  console.log(`Notifications expected: ${result.totalNotificationsExpected}`);
-  console.log(
-    `Events received: ${result.totalEventsReceivedUnique} unique ` +
-      `(+${result.totalDuplicates} duplicate) / raw=${result.totalEventsReceivedRaw}`
-  );
-  console.log(
-    `Delivery rate: ${
-      result.deliveryRate !== null ? (result.deliveryRate * 100).toFixed(1) + "%" : "N/A"
-    }`
-  );
-  console.log(`Connection errors: ${result.totalConnectionErrors}`);
-  console.log(`Reconnects: ${result.totalReconnects}`);
-  printLatency("E2E Latency (ms)", result.e2eLatency);
-  printLatency("Server Delivery Latency (ms)", result.serverDeliveryLatency);
-  console.log("=".repeat(60) + "\n");
-}
+const __dirname=dirname(fileURLToPath(import.meta.url));const RESULTS_ROOT=join(__dirname,"..","results");
+function timestampSlug():string{return new Date().toISOString().replace(/[:.]/g,"-");}
+export function writeScenarioResult(result:ScenarioResult):{rawPath:string;processedPath:string}{const slug=`${result.scenarioId}-${result.transport}-${timestampSlug()}`,rawDir=join(RESULTS_ROOT,"raw"),processedDir=join(RESULTS_ROOT,"processed");mkdirSync(rawDir,{recursive:true});mkdirSync(processedDir,{recursive:true});const rawPath=join(rawDir,`${slug}.json`);writeFileSync(rawPath,JSON.stringify(result,null,2),"utf-8");const{perClient,...summary}=result;const processed={...summary,perClientCount:perClient.length,slowClientCount:perClient.filter(c=>c.isSlowClient).length};const processedPath=join(processedDir,`${slug}.json`);writeFileSync(processedPath,JSON.stringify(processed,null,2),"utf-8");return{rawPath,processedPath};}
+function printLatency(label:string,stats:ScenarioResult["e2eLatency"]):void{if(!stats){console.log(`${label}: N/A — no measured samples`);return;}console.log(`${label}: min=${stats.minMs} p50=${stats.p50Ms} p90=${stats.p90Ms} p95=${stats.p95Ms} p99=${stats.p99Ms} max=${stats.maxMs} mean=${stats.meanMs}`);}
+export function printSummary(result:ScenarioResult):void{console.log("\n"+"=".repeat(60));console.log(`Scenario: ${result.scenarioId} — ${result.scenarioName}`);console.log(`Transport: ${result.transport}`);console.log(`Publisher: user#${result.publisherId}`);console.log(`Subscribers: ${result.actualSubscriberCount} thực tế / ${result.requestedSubscriberCount} yêu cầu`);console.log(`Posts created: ${result.postsCreated}`);console.log(`Notifications expected: ${result.totalNotificationsExpected}`);console.log(`Events received: ${result.totalEventsReceivedUnique} unique (+${result.totalDuplicates} duplicate) / raw=${result.totalEventsReceivedRaw}`);console.log(`Delivery rate: ${result.deliveryRate!==null?(result.deliveryRate*100).toFixed(1)+"%":"N/A"}`);console.log(`Connection errors: ${result.totalConnectionErrors}`);console.log(`Reconnects: ${result.totalReconnects}`);printLatency("E2E Latency (ms)",result.e2eLatency);printLatency("Server Delivery Latency (ms)",result.serverDeliveryLatency);printLatency("Transport Delivery Latency (ms)",result.transportDeliveryLatency);console.log("=".repeat(60)+"\n");}
