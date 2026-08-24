@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 /**
  * Base URL đọc ĐỘNG (không đóng băng lúc import) — cho phép Scenario H
  * (runNetworkScenario.ts) tạm thời trỏ mọi request qua Toxiproxy proxy mà
@@ -22,6 +24,16 @@ export function wsBaseUrl(): string {
   return apiBaseUrl().replace(/^http/, "ws");
 }
 
+export function benchmarkApiKey(): string {
+  const key = process.env.BENCHMARK_API_KEY;
+  if (!key) {
+    throw new Error(
+      "Missing BENCHMARK_API_KEY. Set it in benchmark/.env or environment variables."
+    );
+  }
+  return key;
+}
+
 export interface ApiUser {
   id: number;
   display_name: string;
@@ -31,8 +43,16 @@ export interface ApiUser {
 export interface CreatedPost {
   post: { id: number; author_id: number; script: string; posted_at: number };
   eventId: number;
+  notificationIds: number[];
   notificationCount: number;
   recipientIds: number[];
+}
+
+export interface DeliveryAttempt {
+  notificationId: number;
+  transport: "short_polling" | "long_polling" | "sse" | "websocket" | "web_push";
+  result: "success" | "failed" | "timeout";
+  latencyMs: number | null;
 }
 
 export async function listUsers(): Promise<ApiUser[]> {
@@ -60,7 +80,37 @@ export async function createPost(authorId: number, script: string): Promise<Crea
   if (!res.ok) {
     throw new Error(`POST /posts thất bại: HTTP ${res.status}`);
   }
-  return res.json();
+  return res.json() as Promise<CreatedPost>;
+}
+
+export async function getDeliveryAttempts(
+  notificationIds: number[]
+): Promise<DeliveryAttempt[]> {
+  if (notificationIds.length === 0) return [];
+
+  const params = new URLSearchParams({
+    notificationIds: notificationIds.join(","),
+  });
+
+  const res = await fetch(
+    `${apiBaseUrl()}/benchmark/delivery-attempts?${params}`,
+    {
+      headers: {
+        "X-Benchmark-Key": benchmarkApiKey(),
+      },
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(
+      `GET /benchmark/delivery-attempts thất bại: HTTP ${res.status}`
+    );
+  }
+
+  const body = (await res.json()) as {
+    attempts: DeliveryAttempt[];
+  };
+  return body.attempts;
 }
 
 export async function checkHealth(): Promise<boolean> {
