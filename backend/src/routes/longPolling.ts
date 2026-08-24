@@ -14,10 +14,9 @@ export async function longPollingRoutes(app: FastifyInstance) {
 
       const immediateRows = fetchNotificationsAfter(userId, after, limit);
       if (immediateRows.length > 0) {
-        const now = Date.now();
-        recordDeliveryBatch(immediateRows, "long_polling", now);
         const serverSentAtMs = Date.now();
-        return reply.send({ notifications: immediateRows, nextAfter: immediateRows[immediateRows.length - 1].id, timedOut: false, serverTime: now, serverSentAtMs });
+        recordDeliveryBatch(immediateRows, "long_polling", serverSentAtMs);
+        return reply.send({ notifications: immediateRows, nextAfter: immediateRows[immediateRows.length - 1].id, timedOut: false, serverTime: serverSentAtMs, serverSentAtMs });
       }
 
       const connectionId = openConnection(userId, "long_polling");
@@ -38,16 +37,15 @@ export async function longPollingRoutes(app: FastifyInstance) {
       }
 
       const rows = fetchNotificationsAfter(userId, after, limit);
-      const now = Date.now();
       if (rows.length > 0) {
-        recordDeliveryBatch(rows, "long_polling", now);
-        closeConnection(connectionId, "data_delivered");
         const serverSentAtMs = Date.now();
-        return reply.send({ notifications: rows, nextAfter: rows[rows.length - 1].id, timedOut: false, serverTime: now, serverSentAtMs });
+        recordDeliveryBatch(rows, "long_polling", serverSentAtMs);
+        closeConnection(connectionId, "data_delivered");
+        return reply.send({ notifications: rows, nextAfter: rows[rows.length - 1].id, timedOut: false, serverTime: serverSentAtMs, serverSentAtMs });
       }
 
       closeConnection(connectionId, "timeout");
       const serverSentAtMs = Date.now();
-      return reply.send({ notifications: [], nextAfter: after, timedOut: true, serverTime: now, serverSentAtMs });
+      return reply.send({ notifications: [], nextAfter: after, timedOut: true, serverTime: serverSentAtMs, serverSentAtMs });
     });
 }
