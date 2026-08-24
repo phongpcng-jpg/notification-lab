@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkHealth, createPost, getDeliveryAttempts } from "../lib/apiClient.js";
+import {
+  calibrateServerClock,
+  checkHealth,
+  createPost,
+  getDeliveryAttempts,
+} from "../lib/apiClient.js";
 import { pickPublisher } from "../lib/pickPublisher.js";
 import { generateScript } from "../lib/payload.js";
 import { mulberry32 } from "../lib/random.js";
@@ -113,7 +118,6 @@ export async function runScenario(
       `Connection storm: mở ${clients.length} kết nối trong ${rampUpMs}ms (~${delayPerClient.toFixed(1)}ms/client)`
     );
     for (const c of clients) {
-      // Cách 1: storm vẫn fire-and-forget, không chờ từng connection ready.
       void c.connect();
       if (delayPerClient > 0) await sleep(delayPerClient);
     }
@@ -126,9 +130,16 @@ export async function runScenario(
     client.events.length = 0;
   }
 
+  // Calibrate AFTER connections are ready and BEFORE the workload starts.
+  // E2E latency will be calculated entirely in the server Unix-ms domain,
+  // avoiding the machine-vs-Render clock skew that caused negative latency.
+  const clockCalibration = await calibrateServerClock();
+  console.log(
+    `Clock calibration: RTT=${clockCalibration.roundTripMs.toFixed(1)}ms`
+  );
+
   const startedAt = new Date();
   const startedMonoMs = performance.now();
-  const notificationPostCreatedMonoMs = new Map<number, number>();
   const expectedNotificationIds = new Set<number>();
 
   const reconnectTimers: ReturnType<typeof setTimeout>[] = [];
@@ -147,18 +158,11 @@ export async function runScenario(
   const deadlineMonoMs = startedMonoMs + config.durationMs;
 
   async function createMeasuredPost(): Promise<void> {
-    const requestStartedMonoMs = performance.now();
     const created = await createPost(publisherId, generateScript(config.payloadSize));
-    const postCreatedMonoMs = performance.now();
-
-    // requestStartedMonoMs is intentionally retained only as a local timing
-    // boundary for future request-level metrics; E2E starts when POST completes.
-    void requestStartedMonoMs;
 
     postsCreated++;
     for (const notificationId of created.notificationIds) {
       expectedNotificationIds.add(notificationId);
-      notificationPostCreatedMonoMs.set(notificationId, postCreatedMonoMs);
     }
   }
 
@@ -210,16 +214,18 @@ export async function runScenario(
   const finishedAt = new Date();
 
   const e2eLatencySamplesMs: number[] = [];
+  const serverClockOffsetMs = clockCalibration.serverMsPerMonoMs;
+
   for (const client of clients) {
     const seen = new Set<number>();
     for (const event of client.events) {
       if (seen.has(event.notificationId)) continue;
       seen.add(event.notificationId);
 
-      const postCreatedMonoMs = notificationPostCreatedMonoMs.get(event.notificationId);
-      if (postCreatedMonoMs === undefined) continue;
-
-      const latencyMs = event.receivedAtMonoMs - postCreatedMonoMs;
+      // event.receivedAtMonoMs is from performance.now(); convert it to the
+      // Render server's Unix-ms domain before subtracting serverCreatedAtMs.
+      const estimatedServerReceiveMs = event.receivedAtMonoMs + serverClockOffsetMs;
+      const latencyMs = estimatedServerReceiveMs - event.serverCreatedAtMs;
       if (Number.isFinite(latencyMs) && latencyMs >= 0) {
         e2eLatencySamplesMs.push(latencyMs);
       }
@@ -234,8 +240,6 @@ export async function runScenario(
         transport
       );
 
-      // One notification can have multiple attempts after reconnects. Keep
-      // one successful server-side measurement per notification for this run.
       const seenSuccessful = new Set<number>();
       serverDeliveryLatencySamplesMs = attempts
         .filter((attempt) => attempt.transport === transport)
