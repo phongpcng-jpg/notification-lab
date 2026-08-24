@@ -56,7 +56,7 @@ export interface DeliveryAttempt {
 }
 
 export interface ServerClockCalibration {
-  /** server Unix-ms - client performance.now() at the estimated request midpoint */
+  /** server Unix-ms - client performance.now() at the moment the health response was received */
   serverMsPerMonoMs: number;
   roundTripMs: number;
 }
@@ -121,9 +121,9 @@ export async function getDeliveryAttempts(
 
 /**
  * Calibrate the Render server wall clock against the benchmark process's
- * monotonic clock. We use the midpoint of the /health request to reduce the
- * effect of network round-trip time. The result lets us convert a later
- * performance.now() into the same Unix-ms domain used by SSE createdAt.
+ * monotonic clock. The backend captures serverTimestampMs immediately before
+ * constructing the /health response, so pairing it with the client's receive
+ * timestamp avoids the previous RTT/2 midpoint assumption.
  */
 export async function calibrateServerClock(): Promise<ServerClockCalibration> {
   const requestStartMonoMs = performance.now();
@@ -137,20 +137,19 @@ export async function calibrateServerClock(): Promise<ServerClockCalibration> {
     throw new Error(`GET /health thất bại: HTTP ${res.status}`);
   }
 
-  const body = (await res.json()) as { time?: string };
-  if (!body.time) {
-    throw new Error("GET /health không trả field time để calibrate server clock");
-  }
+  const body = (await res.json()) as {
+    time?: string;
+    serverTimestampMs?: number;
+  };
 
-  const serverTimeMs = Date.parse(body.time);
-  if (!Number.isFinite(serverTimeMs)) {
-    throw new Error(`GET /health trả time không hợp lệ: ${body.time}`);
+  if (typeof body.serverTimestampMs !== "number" || !Number.isFinite(body.serverTimestampMs)) {
+    throw new Error(
+      "GET /health không trả serverTimestampMs hợp lệ; backend phải được deploy với benchmark clock calibration patch."
+    );
   }
-
-  const midpointMonoMs = (requestStartMonoMs + responseMonoMs) / 2;
 
   return {
-    serverMsPerMonoMs: serverTimeMs - midpointMonoMs,
+    serverMsPerMonoMs: body.serverTimestampMs - responseMonoMs,
     roundTripMs: responseMonoMs - requestStartMonoMs,
   };
 }
