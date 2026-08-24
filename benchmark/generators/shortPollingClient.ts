@@ -26,8 +26,8 @@ export class ShortPollingClient implements SimulatedClient {
       const res = await fetch(`${apiBaseUrl()}/notifications/poll?userId=${this.userId}&after=${this.after}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as PollResponse;
-      if (this.extraDelayMs > 0 && body.notifications.length > 0) await sleep(this.extraDelayMs);
       const receivedAtMonoMs = performance.now();
+      if (this.extraDelayMs > 0 && body.notifications.length > 0) await sleep(this.extraDelayMs);
       for (const n of body.notifications) this.events.push({
         notificationId: n.id, receivedAtMonoMs, serverCreatedAtMs: n.created_at * 1000,
         serverSentAtMs: body.serverSentAtMs,
