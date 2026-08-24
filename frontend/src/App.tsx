@@ -42,7 +42,7 @@ export default function App() {
   );
   const sse = useSse(currentUserId, transport === "sse");
   const websocket = useWebSocket(currentUserId, transport === "websocket");
-  const webPush = useWebPush(currentUserId);
+  const webPush = useWebPush(currentUserId, transport === "web_push");
 
   const refreshUsers = () => api.listUsers().then((r) => setUsers(r.users));
   const refreshPosts = () => api.listPosts().then((r) => setPosts(r.posts));
@@ -226,7 +226,7 @@ export default function App() {
                 Trạng thái:{" "}
                 {longPolling.isPolling ? "đang giữ request mở..." : "đã dừng"}
                 {longPolling.lastError && (
-                  <> — lỗi gần nhất: {longPolling.lastError} (đang retry với backoff)</>
+                  <> — {longPolling.lastError} (đang retry với backoff)</>
                 )}
               </p>
               {longPolling.notifications.length === 0 && (
@@ -305,10 +305,11 @@ export default function App() {
                 {webPush.lastError && <> — {webPush.lastError}</>}
               </p>
               <p className="muted">
-                Web Push KHÔNG hiển thị danh sách ở đây — notification sẽ
-                hiện ra dưới dạng thông báo hệ điều hành (kể cả khi tab này
-                đóng), do Service Worker xử lý, không qua React state.
+                Web Push hiển thị notification trên hệ điều hành thông qua
+                Service Worker. Khi frontend đang mở, notification mới cũng
+                được cập nhật vào danh sách bên dưới.
               </p>
+
               {webPush.status !== "subscribed" ? (
                 <button onClick={() => webPush.subscribe()}>
                   Bật thông báo đẩy
@@ -318,6 +319,25 @@ export default function App() {
                   Tắt thông báo đẩy
                 </button>
               )}
+
+              {webPush.notifications.length === 0 && (
+                <p className="muted">Chưa có notification nào.</p>
+              )}
+
+              <ul>
+                {webPush.notifications.map((n) => (
+                  <li key={n.id}>
+                    <strong>{n.actor_display_name}</strong> vừa đăng:{" "}
+                    {n.script_preview}
+                    <br />
+                    <span className="muted">
+                      {new Date(n.created_at * 1000).toLocaleTimeString("vi-VN")}
+                      {" · "}
+                      status: {n.status}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </>
           )}
         </div>
