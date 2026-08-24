@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkHealth, createPost } from "../lib/apiClient.js";
+import { checkHealth, createPost, getDeliveryAttempts } from "../lib/apiClient.js";
 import { pickPublisher } from "../lib/pickPublisher.js";
 import { generateScript } from "../lib/payload.js";
 import { mulberry32 } from "../lib/random.js";
@@ -28,8 +28,6 @@ function loadScenarioConfig(args: Record<string, string>): ScenarioConfig {
   const raw = readFileSync(scenarioPath, "utf-8");
   const config = JSON.parse(raw) as ScenarioConfig;
 
-  // Overrides từ CLI — cho phép điều chỉnh nhanh mà không sửa file JSON,
-  // ví dụ tăng Scenario C lên đúng quy mô 100k mà không tạo 1 file config riêng.
   if (args.subscribers) config.subscriberCount = Number(args.subscribers);
   if (args.duration) config.durationMs = Number(args.duration);
   if (args["posts-per-second"]) {
@@ -45,6 +43,34 @@ function loadScenarioConfig(args: Record<string, string>): ScenarioConfig {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForDeliveryAttempts(
+  notificationIds: number[],
+  transport: Transport,
+  timeoutMs = 2_000
+) {
+  if (notificationIds.length === 0) return [];
+
+  const deadline = performance.now() + timeoutMs;
+  let attempts = await getDeliveryAttempts(notificationIds);
+
+  while (performance.now() < deadline) {
+    const deliveredIds = new Set(
+      attempts
+        .filter((attempt) => attempt.transport === transport)
+        .map((attempt) => attempt.notificationId)
+    );
+
+    if (notificationIds.every((id) => deliveredIds.has(id))) {
+      return attempts;
+    }
+
+    await sleep(50);
+    attempts = await getDeliveryAttempts(notificationIds);
+  }
+
+  return attempts;
 }
 
 export async function runScenario(
@@ -80,7 +106,6 @@ export async function runScenario(
     });
   });
 
-  // ── Kết nối clients: connection storm (ramp-up) hoặc mở đồng loạt ──
   if (config.connectionStorm?.enabled) {
     const rampUpMs = config.connectionStorm.rampUpMs;
     const delayPerClient = clients.length > 0 ? rampUpMs / clients.length : 0;
@@ -88,6 +113,7 @@ export async function runScenario(
       `Connection storm: mở ${clients.length} kết nối trong ${rampUpMs}ms (~${delayPerClient.toFixed(1)}ms/client)`
     );
     for (const c of clients) {
+      // Cách 1: storm vẫn fire-and-forget, không chờ từng connection ready.
       void c.connect();
       if (delayPerClient > 0) await sleep(delayPerClient);
     }
@@ -95,20 +121,16 @@ export async function runScenario(
     await Promise.all(clients.map((c) => c.connect()));
   }
 
-  // Grace period để catch-up (nếu có) hoàn tất trước khi bắt đầu đo.
   await sleep(500);
-
-  // Các notification nhận được trong grace period là dữ liệu catch-up tồn tại
-  // trước khi benchmark bắt đầu. Không tính chúng vào delivery/latency của
-  // workload hiện tại. Xóa chúng ngay trước measurement boundary.
   for (const client of clients) {
     client.events.length = 0;
   }
 
-  // Measurement bắt đầu SAU khi các kết nối đã ổn định và catch-up đã được loại bỏ.
   const startedAt = new Date();
+  const startedMonoMs = performance.now();
+  const notificationPostCreatedMonoMs = new Map<number, number>();
+  const expectedNotificationIds = new Set<number>();
 
-  // ── Reconnect storm: lên lịch disconnect+reconnect đồng loạt tại các mốc thời gian ──
   const reconnectTimers: ReturnType<typeof setTimeout>[] = [];
   if (config.reconnectStorm?.enabled) {
     for (const atMs of config.reconnectStorm.atMs) {
@@ -121,50 +143,120 @@ export async function runScenario(
     }
   }
 
-  // ── Post generator ──
   let postsCreated = 0;
-  const postGenStop = { stopped: false };
+  const deadlineMonoMs = startedMonoMs + config.durationMs;
+
+  async function createMeasuredPost(): Promise<void> {
+    const requestStartedMonoMs = performance.now();
+    const created = await createPost(publisherId, generateScript(config.payloadSize));
+    const postCreatedMonoMs = performance.now();
+
+    // requestStartedMonoMs is intentionally retained only as a local timing
+    // boundary for future request-level metrics; E2E starts when POST completes.
+    void requestStartedMonoMs;
+
+    postsCreated++;
+    for (const notificationId of created.notificationIds) {
+      expectedNotificationIds.add(notificationId);
+      notificationPostCreatedMonoMs.set(notificationId, postCreatedMonoMs);
+    }
+  }
 
   async function runFixedRate(): Promise<void> {
     const rate = config.postRate.postsPerSecond ?? 1;
+    if (rate <= 0) return;
     const intervalMs = 1000 / rate;
-    while (!postGenStop.stopped) {
-      await createPost(publisherId, generateScript(config.payloadSize));
-      postsCreated++;
-      await sleep(intervalMs);
+
+    while (performance.now() < deadlineMonoMs) {
+      await createMeasuredPost();
+      if (performance.now() >= deadlineMonoMs) break;
+
+      const remainingMs = deadlineMonoMs - performance.now();
+      await sleep(Math.min(intervalMs, remainingMs));
     }
   }
 
   async function runBurstRate(): Promise<void> {
     const burstSize = config.postRate.burstSize ?? 10;
     const intervalMs = config.postRate.burstIntervalMs ?? 10_000;
-    while (!postGenStop.stopped) {
-      const burstPromises: Promise<unknown>[] = [];
-      for (let i = 0; i < burstSize && !postGenStop.stopped; i++) {
-        burstPromises.push(createPost(publisherId, generateScript(config.payloadSize)));
-        postsCreated++;
+
+    while (performance.now() < deadlineMonoMs) {
+      const burstPromises: Promise<void>[] = [];
+      for (let i = 0; i < burstSize && performance.now() < deadlineMonoMs; i++) {
+        burstPromises.push(createMeasuredPost());
       }
       await Promise.all(burstPromises);
-      await sleep(intervalMs);
+
+      if (performance.now() >= deadlineMonoMs) break;
+      const remainingMs = deadlineMonoMs - performance.now();
+      await sleep(Math.min(intervalMs, remainingMs));
     }
   }
 
-  const postGenPromise =
-    config.postRate.mode === "burst" ? runBurstRate() : runFixedRate();
-
-  await sleep(config.durationMs);
-  postGenStop.stopped = true;
-  await postGenPromise.catch((err) => {
+  try {
+    if (config.postRate.mode === "burst") {
+      await runBurstRate();
+    } else {
+      await runFixedRate();
+    }
+  } catch (err) {
     console.error("[postGenerator] lỗi:", err);
-  });
+  }
 
   for (const t of reconnectTimers) clearTimeout(t);
 
-  // Grace period cho message cuối cùng kịp tới trước khi đóng kết nối.
   await sleep(2000);
-
   await Promise.all(clients.map((c) => c.disconnect()));
   const finishedAt = new Date();
+
+  const e2eLatencySamplesMs: number[] = [];
+  for (const client of clients) {
+    const seen = new Set<number>();
+    for (const event of client.events) {
+      if (seen.has(event.notificationId)) continue;
+      seen.add(event.notificationId);
+
+      const postCreatedMonoMs = notificationPostCreatedMonoMs.get(event.notificationId);
+      if (postCreatedMonoMs === undefined) continue;
+
+      const latencyMs = event.receivedAtMonoMs - postCreatedMonoMs;
+      if (Number.isFinite(latencyMs) && latencyMs >= 0) {
+        e2eLatencySamplesMs.push(latencyMs);
+      }
+    }
+  }
+
+  let serverDeliveryLatencySamplesMs: number[] = [];
+  if (expectedNotificationIds.size > 0) {
+    try {
+      const attempts = await waitForDeliveryAttempts(
+        [...expectedNotificationIds],
+        transport
+      );
+
+      // One notification can have multiple attempts after reconnects. Keep
+      // one successful server-side measurement per notification for this run.
+      const seenSuccessful = new Set<number>();
+      serverDeliveryLatencySamplesMs = attempts
+        .filter((attempt) => attempt.transport === transport)
+        .filter((attempt) => attempt.result === "success")
+        .filter((attempt) => !seenSuccessful.has(attempt.notificationId))
+        .map((attempt) => {
+          seenSuccessful.add(attempt.notificationId);
+          return attempt.latencyMs;
+        })
+        .filter(
+          (latency): latency is number =>
+            typeof latency === "number" && Number.isFinite(latency) && latency >= 0
+        );
+    } catch (err) {
+      console.warn(
+        `[benchmark] Không đọc được server delivery attempts: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
+  }
 
   const result = buildScenarioResult({
     scenarioId: config.id,
@@ -176,6 +268,8 @@ export async function runScenario(
     publisherId,
     requestedSubscriberCount: config.subscriberCount,
     postsCreated,
+    e2eLatencySamplesMs,
+    serverDeliveryLatencySamplesMs,
     perClient: clients.map((c) => ({
       clientIndex: c.clientIndex,
       userId: c.userId,
