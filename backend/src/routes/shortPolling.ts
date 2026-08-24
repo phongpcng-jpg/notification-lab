@@ -37,16 +37,16 @@ export async function shortPollingRoutes(app: FastifyInstance) {
     const limit = Math.min(Number(req.query.limit ?? 50), 200);
 
     const rows = fetchNotificationsAfter(userId, after, limit);
-    recordDeliveryBatch(rows, "short_polling", requestReceivedAt);
+    const serverSentAtMs = Date.now();
+    recordDeliveryBatch(rows, "short_polling", serverSentAtMs);
 
     const nextAfter = rows.length > 0 ? rows[rows.length - 1].id : after;
-    const serverSentAtMs = Date.now();
 
     return reply.send({
       notifications: rows,
       nextAfter,
       suggestedIntervalMs: config.shortPollSuggestedIntervalMs,
-      serverTime: requestReceivedAt,
+      serverTime: serverSentAtMs,
       serverSentAtMs,
     });
   });
