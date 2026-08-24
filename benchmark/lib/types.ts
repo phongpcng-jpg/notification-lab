@@ -34,10 +34,10 @@ export interface ScenarioConfig {
 
 export interface ReceivedEvent {
   notificationId: number;
-  /** created_at do server gán (quy đổi ra ms) — dùng để tính latency. */
-  postedAtMs: number;
-  /** Date.now() phía client (giả lập) tại thời điểm nhận được message. */
-  receivedAtMs: number;
+  /** Monotonic benchmark clock at the point the client records the notification. */
+  receivedAtMonoMs: number;
+  /** Server-provided notification creation time, retained for raw/debug inspection only. */
+  serverCreatedAtMs: number;
 }
 
 /**
