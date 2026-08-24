@@ -55,6 +55,12 @@ export interface DeliveryAttempt {
   latencyMs: number | null;
 }
 
+export interface ServerClockCalibration {
+  /** serverTimeMs - client performance.now() at the estimated request midpoint */
+  serverMsPerMonoMs: number;
+  roundTripMs: number;
+}
+
 export async function listUsers(): Promise<ApiUser[]> {
   const res = await fetch(`${apiBaseUrl()}/users`);
   if (!res.ok) throw new Error(`GET /users thất bại: HTTP ${res.status}`);
@@ -111,6 +117,46 @@ export async function getDeliveryAttempts(
     attempts: DeliveryAttempt[];
   };
   return body.attempts;
+}
+
+/**
+ * Calibrate the Render server wall clock against the benchmark process's
+ * monotonic clock. We use the midpoint of the /health request to reduce the
+ * effect of network round-trip time. The result lets us convert a later
+ * performance.now() into the same Unix-ms domain used by SSE createdAt.
+ */
+export async function calibrateServerClock(): Promise<ServerClockCalibration> {
+  const requestStartMonoMs = performance.now();
+  const requestStartWallMs = Date.now();
+
+  const res = await fetch(`${apiBaseUrl()}/health`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`GET /health thất bại: HTTP ${res.status}`);
+  }
+
+  const body = (await res.json()) as { time?: string };
+  const responseMonoMs = performance.now();
+  const responseWallMs = Date.now();
+
+  if (!body.time) {
+    throw new Error("GET /health không trả field time để calibrate server clock");
+  }
+
+  const serverTimeMs = Date.parse(body.time);
+  if (!Number.isFinite(serverTimeMs)) {
+    throw new Error(`GET /health trả time không hợp lệ: ${body.time}`);
+  }
+
+  const midpointMonoMs = (requestStartMonoMs + responseMonoMs) / 2;
+  const midpointWallMs = (requestStartWallMs + responseWallMs) / 2;
+  const estimatedServerAtMidpointMs = serverTimeMs;
+
+  return {
+    serverMsPerMonoMs: estimatedServerAtMidpointMs - midpointMonoMs,
+    roundTripMs: responseMonoMs - requestStartMonoMs,
+  };
 }
 
 export async function checkHealth(): Promise<boolean> {
