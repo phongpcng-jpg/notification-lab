@@ -1,9 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
-import {
-  fetchNotificationsAfter,
-  recordDeliveryBatch,
-} from "../domain/notificationQueries.js";
+import { fetchNotificationsAfter, recordDeliveryBatch } from "../domain/notificationQueries.js";
 import { sseHub, type SseSubscription } from "../domain/sseHub.js";
 import { openConnection, closeConnection } from "../domain/connectionTracker.js";
 import { serializeNotificationForClient } from "../domain/notificationSerialization.js";
@@ -33,11 +30,12 @@ export async function sseRoutes(app: FastifyInstance) {
       const connectionId = openConnection(userId, "sse");
 
       function sendEvent(row: NotificationView): void {
+        const payload = JSON.stringify(serializeNotificationForClient(row, Date.now()));
         const serverSentAtMs = Date.now();
-        const payload = JSON.stringify(serializeNotificationForClient(row, serverSentAtMs));
+        const finalPayload = JSON.stringify(serializeNotificationForClient(row, serverSentAtMs));
         reply.raw.write(`id: ${row.id}\n`);
         reply.raw.write(`event: notification\n`);
-        reply.raw.write(`data: ${payload}\n\n`);
+        reply.raw.write(`data: ${finalPayload}\n\n`);
       }
 
       const missed = fetchNotificationsAfter(userId, after, 200);
@@ -48,11 +46,12 @@ export async function sseRoutes(app: FastifyInstance) {
 
       const subscription: SseSubscription = {
         onNotification: (row) => {
+          const payload = JSON.stringify(serializeNotificationForClient(row, Date.now()));
           const serverSentAtMs = Date.now();
-          const payload = JSON.stringify(serializeNotificationForClient(row, serverSentAtMs));
+          const finalPayload = JSON.stringify(serializeNotificationForClient(row, serverSentAtMs));
           reply.raw.write(`id: ${row.id}\n`);
           reply.raw.write(`event: notification\n`);
-          reply.raw.write(`data: ${payload}\n\n`);
+          reply.raw.write(`data: ${finalPayload}\n\n`);
           recordDeliveryBatch([row], "sse", serverSentAtMs);
         },
         forceClose: () => {
