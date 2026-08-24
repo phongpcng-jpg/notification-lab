@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "./config.js";
+import type { PolledNotification } from "./transports/types.js";
 
 const BASE = API_BASE_URL;
 
@@ -14,6 +15,11 @@ export interface ApiPost {
   script: string;
   posted_at: number;
   author_name?: string;
+}
+
+export interface NotificationListResponse {
+  notifications: PolledNotification[];
+  nextAfter: number;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -57,5 +63,7 @@ export const api = {
       body: JSON.stringify({ authorId, script }),
     }),
   listNotifications: (userId: number, after = 0) =>
-    request(`/notifications?userId=${userId}&after=${after}`),
+    request<NotificationListResponse>(
+      `/notifications?userId=${userId}&after=${after}`
+    ),
 };
