@@ -68,10 +68,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
   await app.register(websocketPlugin);
 
-  app.get("/health", async () => ({
-    status: "ok",
-    time: new Date().toISOString(),
-  }));
+  // serverTimestampMs is captured immediately before the response is built.
+  // The benchmark pairs this value with performance.now() captured immediately
+  // after the response arrives, avoiding the old RTT/2 midpoint assumption.
+  app.get("/health", async () => {
+    const serverTimestampMs = Date.now();
+    return {
+      status: "ok",
+      time: new Date(serverTimestampMs).toISOString(),
+      serverTimestampMs,
+    };
+  });
 
   await app.register(userRoutes);
   await app.register(followRoutes);
