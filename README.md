@@ -86,6 +86,8 @@ npm run dev
 
 Fastify chạy mặc định tại `http://localhost:3000`.
 
+> `server.ts` cũng gọi migration idempotent khi process khởi động. Chạy `npm run migrate` riêng ở local vẫn hữu ích để chuẩn bị/kiểm tra database trước khi phát triển hoặc test.
+
 ### Chạy frontend
 
 ```bash
@@ -188,31 +190,54 @@ Tăng `--subscribers`, `--subscriber-scale` hoặc `--duration-scale` khi cần.
 
 ## 10. Deployment
 
-Branch `feature/render-deployment` hỗ trợ tách frontend và backend khi deploy. Backend và frontend có thể chạy trên Render; SQLite vẫn là file-based database của backend.
+Branch `feature/render-deployment` hỗ trợ tách frontend và backend khi deploy. Hiện branch này đang được cấu hình với **hai Render services** dùng cùng repository:
+
+| Service | Root directory | URL | Auto deploy |
+|---|---|---|---|
+| Backend `notification-lab` | `backend` | `https://notification-lab.onrender.com` | **Tắt** — deploy thủ công |
+| Frontend `notification-lab-1` | `frontend` | `https://notification-lab-1.onrender.com` | **Bật** — theo commit |
+
+Các thông tin trên phản ánh cấu hình Render hiện tại; nếu service được tạo lại hoặc đổi tên/URL thì cần cập nhật phần này.
 
 ### Backend trên Render
 
-- Deploy thư mục `backend/` như một Node web service.
-- Build command:
+Service backend hiện dùng:
 
-```bash
-npm install && npm run build
-```
-
+- Root directory: `backend/`
+- Runtime: Node
+- Plan: Free
+- Health check: `/health`
+- Số instance: `1`
+- Region: Oregon
 - Start command:
 
 ```bash
 npm start
 ```
 
-- Render cung cấp `PORT`; backend phải bind vào port được environment cung cấp.
-- Thiết lập `CORS_ORIGIN` thành **public URL của frontend**.
-- Thiết lập các secret/config cần thiết trong Render Environment Variables, đặc biệt VAPID keys nếu dùng Web Push.
+Build command hiện được cấu hình trên Render là:
+
+```bash
+npm install && npm run seed -- --users=2000 --avgFollows=200 --seed=12345 && npm run build
+```
+
+> Build hiện tại có bước `seed` để chuẩn bị dataset cho môi trường Render. Đây là cấu hình deployment hiện tại, **không phải yêu cầu của production build** và không thay thế bước seed tùy chỉnh khi benchmark/local.
+
+Render cung cấp `PORT`; backend bind vào `0.0.0.0` và port được environment cung cấp. Thiết lập `CORS_ORIGIN` thành **public URL của frontend**:
+
+```text
+CORS_ORIGIN=https://notification-lab-1.onrender.com
+```
+
+Thiết lập các secret/config cần thiết trong Render Environment Variables, đặc biệt VAPID keys nếu dùng Web Push và `BENCHMARK_API_KEY` nếu benchmark gọi internal delivery-attempts endpoint.
+
+Vì **auto deploy backend đang tắt**, sau khi push commit mới lên `feature/render-deployment` cần trigger deploy backend thủ công trên Render trước khi test backend production. Frontend hiện auto deploy theo commit.
 
 ### Frontend trên Render
 
-Deploy thư mục `frontend/` như static site:
+Service frontend hiện là Render Static Site:
 
+- Root directory: `frontend/`
 - Build command:
 
 ```bash
@@ -225,13 +250,14 @@ npm install && npm run build
 dist
 ```
 
-- Set `VITE_API_BASE_URL` thành **public URL của backend**, không thêm `/api`.
-
-Ví dụ:
+- Auto deploy: bật theo commit trên `feature/render-deployment`.
+- Set `VITE_API_BASE_URL` thành:
 
 ```text
-VITE_API_BASE_URL=https://<backend>.onrender.com
+https://notification-lab.onrender.com
 ```
+
+Không thêm `/api`.
 
 Frontend production sẽ gọi trực tiếp backend HTTP và WebSocket (`/ws`); Vite `/api` proxy chỉ dành cho local development.
 
