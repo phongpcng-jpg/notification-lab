@@ -56,7 +56,7 @@ export interface DeliveryAttempt {
 }
 
 export interface ServerClockCalibration {
-  /** serverTimeMs - client performance.now() at the estimated request midpoint */
+  /** server Unix-ms - client performance.now() at the estimated request midpoint */
   serverMsPerMonoMs: number;
   roundTripMs: number;
 }
@@ -127,19 +127,17 @@ export async function getDeliveryAttempts(
  */
 export async function calibrateServerClock(): Promise<ServerClockCalibration> {
   const requestStartMonoMs = performance.now();
-  const requestStartWallMs = Date.now();
 
   const res = await fetch(`${apiBaseUrl()}/health`, {
     cache: "no-store",
   });
+  const responseMonoMs = performance.now();
+
   if (!res.ok) {
     throw new Error(`GET /health thất bại: HTTP ${res.status}`);
   }
 
   const body = (await res.json()) as { time?: string };
-  const responseMonoMs = performance.now();
-  const responseWallMs = Date.now();
-
   if (!body.time) {
     throw new Error("GET /health không trả field time để calibrate server clock");
   }
@@ -150,11 +148,9 @@ export async function calibrateServerClock(): Promise<ServerClockCalibration> {
   }
 
   const midpointMonoMs = (requestStartMonoMs + responseMonoMs) / 2;
-  const midpointWallMs = (requestStartWallMs + responseWallMs) / 2;
-  const estimatedServerAtMidpointMs = serverTimeMs;
 
   return {
-    serverMsPerMonoMs: estimatedServerAtMidpointMs - midpointMonoMs,
+    serverMsPerMonoMs: serverTimeMs - midpointMonoMs,
     roundTripMs: responseMonoMs - requestStartMonoMs,
   };
 }
