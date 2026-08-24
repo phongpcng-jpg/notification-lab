@@ -1,5 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../config.js";
+import { api } from "../api.js";
+import type { PolledNotification } from "./types.js";
 
 export type WebPushStatus =
   | "idle"
@@ -20,23 +22,66 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+interface WebPushServiceWorkerMessage {
+  type: "notification";
+  notificationId: number | null;
+}
+
 /**
  * WEB PUSH client.
  *
- * Khác biệt lớn nhất so với 4 hook kia: KHÔNG có "subscribe tự động khi
- * chọn transport". Trình duyệt yêu cầu `Notification.requestPermission()`
- * phải xuất phát từ 1 user gesture (click) ở phần lớn trình duyệt hiện đại
- * — không thể tự động hoá bằng useEffect khi component mount. Vì vậy UI
- * phải có nút bấm rõ ràng ("Bật thông báo đẩy"), gọi `subscribe()`.
- *
- * Cũng KHÔNG có danh sách notification hiển thị trong panel này — vì đúng
- * bản chất Web Push, notification hiện ra qua OS-level Notification API
- * (trong Service Worker), không đi qua React state. Panel chỉ hiển thị
- * trạng thái subscription.
+ * Web Push remains independent from the other notification transports.
+ * The Service Worker owns OS-level notifications and reports a push event
+ * to an active tab. This hook owns the React notification state and uses
+ * the canonical /notifications endpoint for history/recovery.
  */
-export function useWebPush(userId: number | null) {
+export function useWebPush(userId: number | null, enabled: boolean) {
   const [status, setStatus] = useState<WebPushStatus>("idle");
   const [lastError, setLastError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<PolledNotification[]>([]);
+
+  const afterRef = useRef(0);
+
+  const mergeNotifications = useCallback((incoming: PolledNotification[]) => {
+    if (incoming.length === 0) return;
+
+    setNotifications((prev) => {
+      const seen = new Set(prev.map((notification) => notification.id));
+      const fresh = incoming.filter((notification) => !seen.has(notification.id));
+
+      if (fresh.length === 0) return prev;
+      return [...fresh.reverse(), ...prev];
+    });
+
+    afterRef.current = Math.max(
+      afterRef.current,
+      ...incoming.map((notification) => notification.id)
+    );
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      const response = await api.listNotifications(userId, 0);
+      mergeNotifications(response.notifications);
+      afterRef.current = Math.max(afterRef.current, response.nextAfter);
+    } catch (err) {
+      setLastError(err instanceof Error ? err.message : String(err));
+    }
+  }, [userId, mergeNotifications]);
+
+  const recoverAfterPush = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      const response = await api.listNotifications(userId, afterRef.current);
+      mergeNotifications(response.notifications);
+      afterRef.current = Math.max(afterRef.current, response.nextAfter);
+    } catch (err) {
+      setLastError(err instanceof Error ? err.message : String(err));
+    }
+  }, [userId, mergeNotifications]);
 
   const subscribe = useCallback(async () => {
     if (!userId) return;
@@ -85,11 +130,12 @@ export function useWebPush(userId: number | null) {
       });
 
       setStatus("subscribed");
+      await loadHistory();
     } catch (err) {
       setLastError(err instanceof Error ? err.message : String(err));
       setStatus("error");
     }
-  }, [userId]);
+  }, [userId, loadHistory]);
 
   const unsubscribe = useCallback(async () => {
     try {
@@ -109,5 +155,34 @@ export function useWebPush(userId: number | null) {
     }
   }, []);
 
-  return { status, lastError, subscribe, unsubscribe };
+  useEffect(() => {
+    if (!enabled || !userId) return;
+
+    afterRef.current = 0;
+    setNotifications([]);
+    void loadHistory();
+  }, [enabled, userId, loadHistory]);
+
+  useEffect(() => {
+    if (!enabled || !userId || !("serviceWorker" in navigator)) return;
+
+    const handleMessage = (event: MessageEvent<WebPushServiceWorkerMessage>) => {
+      if (event.data?.type !== "notification") return;
+      if (event.data.notificationId == null) return;
+      void recoverAfterPush();
+    };
+
+    navigator.serviceWorker.addEventListener("message", handleMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", handleMessage);
+    };
+  }, [enabled, userId, recoverAfterPush]);
+
+  return {
+    status,
+    lastError,
+    notifications,
+    subscribe,
+    unsubscribe,
+  };
 }
