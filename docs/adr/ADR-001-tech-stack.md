@@ -43,11 +43,18 @@ logic (chấp nhận được, đây đúng là nội dung cần nghiên cứu t
 - Vì single Fastify instance + SQLite, benchmark multi-instance/broadcast qua
   Redis Pub/Sub (theo yêu cầu gốc cho WebSocket khi scale) là **out of scope**
   ở phase hiện tại, trừ khi có yêu cầu thêm.
-- `ws` yêu cầu tự viết heartbeat, reconnect, broadcast — sẽ implement ở Phase 2
-  (WebSocket transport) và đo overhead vận hành thực tế, không giả định trước.
+- `ws` yêu cầu tự viết heartbeat, reconnect, broadcast và ACK handling. Các
+  trách nhiệm này **đã được implement trong WebSocket transport hiện tại**;
+  chúng không còn là công việc Phase 2 chưa thực hiện.
 
 ## Evidence
 - Fastify vs Express benchmark: xem fastify.dev/docs/latest/Guides/Benchmarking
   (Tier 1, official docs) — sẽ trích dẫn cụ thể trong `research/` khi viết
   research report cho từng transport, không lấy con số cụ thể ở đây vì
-  benchmark của project chưa chạy (Rule 51 — no fake benchmark).
+  benchmark của project tại thời điểm ADR được chấp nhận chưa có kết quả
+  benchmark chính thức được ghi nhận.
+- Benchmark framework hiện tại hỗ trợ việc chạy và aggregate kết quả cho
+  Short Polling, Long Polling, SSE và WebSocket; Web Push có workflow riêng
+  và không nằm trong common benchmark matrix.
+- ADR này không ghi lại các con số performance cụ thể; các numerical benchmark
+  results phải lấy từ output được sinh bởi benchmark report generator.
