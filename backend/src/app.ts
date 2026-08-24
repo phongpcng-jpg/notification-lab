@@ -11,6 +11,7 @@ import { longPollingRoutes } from "./routes/longPolling.js";
 import { sseRoutes } from "./routes/sse.js";
 import { websocketRoutes } from "./routes/websocket.js";
 import { webPushRoutes } from "./routes/webPush.js";
+import { benchmarkRoutes } from "./routes/benchmark.js";
 import { sendWebPushForNotification } from "./domain/webPushSender.js";
 import { notificationService } from "./domain/notificationService.js";
 import { notificationWaiters } from "./domain/notificationWaiters.js";
@@ -81,6 +82,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(sseRoutes);
   await app.register(websocketRoutes);
   await app.register(webPushRoutes);
+  await app.register(benchmarkRoutes);
 
   return app;
 }
