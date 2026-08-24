@@ -77,3 +77,36 @@ export function recordDeliveryBatch(
     });
   }
 }
+
+export interface DeliveryAttemptView {
+  notificationId: number;
+  transport: Transport;
+  result: "success" | "failed" | "timeout";
+  latencyMs: number | null;
+}
+
+/**
+ * Đọc delivery_attempts phục vụ benchmark. Đây là server-side delivery
+ * latency, KHÔNG phải end-to-end client latency.
+ */
+export function fetchDeliveryAttemptsByNotificationIds(
+  ids: number[]
+): DeliveryAttemptView[] {
+  if (ids.length === 0) return [];
+
+  const db = getDb();
+  const placeholders = ids.map(() => "?").join(",");
+
+  return db
+    .prepare(
+      `SELECT
+         notification_id AS notificationId,
+         transport,
+         result,
+         latency_ms AS latencyMs
+       FROM delivery_attempts
+       WHERE notification_id IN (${placeholders})
+       ORDER BY id ASC`
+    )
+    .all(...ids) as DeliveryAttemptView[];
+}
