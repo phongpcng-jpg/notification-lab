@@ -30,12 +30,11 @@ export async function sseRoutes(app: FastifyInstance) {
       const connectionId = openConnection(userId, "sse");
 
       function sendEvent(row: NotificationView): void {
-        const payload = JSON.stringify(serializeNotificationForClient(row, Date.now()));
         const serverSentAtMs = Date.now();
-        const finalPayload = JSON.stringify(serializeNotificationForClient(row, serverSentAtMs));
+        const payload = JSON.stringify(serializeNotificationForClient(row, serverSentAtMs));
         reply.raw.write(`id: ${row.id}\n`);
         reply.raw.write(`event: notification\n`);
-        reply.raw.write(`data: ${finalPayload}\n\n`);
+        reply.raw.write(`data: ${payload}\n\n`);
       }
 
       const missed = fetchNotificationsAfter(userId, after, 200);
@@ -46,12 +45,11 @@ export async function sseRoutes(app: FastifyInstance) {
 
       const subscription: SseSubscription = {
         onNotification: (row) => {
-          const payload = JSON.stringify(serializeNotificationForClient(row, Date.now()));
           const serverSentAtMs = Date.now();
-          const finalPayload = JSON.stringify(serializeNotificationForClient(row, serverSentAtMs));
+          const payload = JSON.stringify(serializeNotificationForClient(row, serverSentAtMs));
           reply.raw.write(`id: ${row.id}\n`);
           reply.raw.write(`event: notification\n`);
-          reply.raw.write(`data: ${finalPayload}\n\n`);
+          reply.raw.write(`data: ${payload}\n\n`);
           recordDeliveryBatch([row], "sse", serverSentAtMs);
         },
         forceClose: () => {
