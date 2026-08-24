@@ -27,7 +27,21 @@ self.addEventListener("push", (event) => {
     },
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, options),
+      self.clients
+        .matchAll({ type: "window", includeUncontrolled: true })
+        .then((clientsArr) => {
+          for (const client of clientsArr) {
+            client.postMessage({
+              type: "notification",
+              notificationId: payload.notificationId ?? null,
+            });
+          }
+        }),
+    ])
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {
