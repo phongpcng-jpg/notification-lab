@@ -66,11 +66,11 @@ Fastify API
    │
    ├── NotificationService
    ├── PushHub                 → SSE / WebSocket
-   ├── NotificationWaiters     → Long Polling
+   ├── NotificationWaiters    → Long Polling
    └── SQLite / better-sqlite3
 ```
 
-`NotificationService` là transport-agnostic source of notification creation. SSE/WebSocket dùng in-process `PushHub`; Long Polling dùng in-process `NotificationWaiters`. Vì vậy SSE/WebSocket/Long Polling hiện có giới hạn multi-instance nếu chưa bổ sung shared signaling/pub-sub. Short Polling không có connection state ở server nên ít phụ thuộc connection affinity hơn. Chi tiết xem các transport reports và `docs/architecture.md`.
+`NotificationService` là transport-agnostic source of notification creation. SSE/WebSocket dùng in-process `PushHub`; Long Polling dùng in-process `NotificationWaiters`. Vì vậy SSE/WebSocket/Long Polling hiện có giới hạn multi-instance nếu chưa bổ sung shared signaling/pub/sub. Short Polling không có connection state ở server nên ít phụ thuộc connection affinity hơn. Chi tiết xem các transport reports và `docs/architecture.md`.
 
 Web Push khác mô hình trên: backend gửi tới browser Push Service thông qua Web Push/VAPID; Service Worker chịu trách nhiệm nhận push và hiển thị notification.
 
@@ -180,10 +180,10 @@ Scenario H được xử lý riêng. Generator không tự tạo Web Push row tr
 | B | 20 subscribers, 70s, burst 100 mỗi 60s, small | Burst / queue / duplicate behavior |
 | C | 1000 subscribers, 30s, 0.1 post/s, small | Massive fan-out |
 | D | 50 subscribers, 30s, 10 post/s, small | High-frequency workload |
-| E | 300 subscribers, 30s, 0.2 post/s, connection ramp 2s | Connection storm |
-| F | 100 subscribers, 30s, 0.5 post/s, reconnect tại 15s | Reconnection behavior |
+| E | 300 subscribers, 30s, connection ramp 2s | Connection storm |
+| F | 100 subscribers, 30s, reconnect tại 15s | Reconnection behavior |
 | G | 50 subscribers, 30s, 1 post/s, 30% slow + 3s delay | Application-level slow clients |
-| H | 30 subscribers, 45s, 0.5 post/s, Toxiproxy latency/reset | Poor network; chạy riêng |
+| H | 30 subscribers, 45s, 0.5 post/s, configured Toxiproxy impairment profile | Network impairment; chạy riêng |
 | I | 20 subscribers, 30s, 0.5 post/s, large payload | Payload-size effect |
 | J | 100 subscribers, 45s, burst 20/15s + connection/reconnect storm + 20% slow clients + medium payload | Mixed workload |
 
@@ -212,6 +212,8 @@ The benchmark also records server/client timestamps needed to distinguish E2E an
 ### 8.5 Scenario H
 
 H is intentionally excluded from the main A–J-minus-H matrix. It requires Toxiproxy and is generated through the network-specific runner. The generated report puts H in a separate section. fileciteturn165file0L2-L2
+
+The H results should be interpreted only against the **configured Toxiproxy impairment profile** used by the benchmark, not as a general Internet-resilience characterization.
 
 ### 8.6 Web Push
 
@@ -255,7 +257,7 @@ The generated report intentionally does not decide which transport is "best"; it
 6. Check `environment` before comparing results produced on different machines.
 7. Treat Scenario F carefully for Short Polling because it has no persistent connection/reconnect lifecycle comparable to SSE/WebSocket/Long Polling.
 8. Treat Scenario G as application-level processing delay, **not real socket-buffer backpressure**.
-9. Treat H separately because its network conditions are intentionally altered with Toxiproxy.
+9. Treat H separately because its network conditions are intentionally altered by the **configured Toxiproxy impairment profile**.
 10. Do not treat Web Push server dispatch timing as browser-visible notification latency.
 
 ---
@@ -267,7 +269,7 @@ The generated report intentionally does not decide which transport is "best"; it
 - Scenario G does not reproduce true socket-buffer backpressure.
 - Scenario F is not semantically equivalent across all transports.
 - Web Push cannot be measured end-to-end by the common Node client.
-- Network conditions outside Scenario H are not representative of arbitrary Internet paths.
+- Network conditions outside Scenario H are not representative of arbitrary Internet paths; Scenario H itself represents only its configured Toxiproxy impairment profile.
 - Benchmark results should always retain Node version, OS/platform/arch, hostname and whether benchmark/backend share a machine.
 
 ---
