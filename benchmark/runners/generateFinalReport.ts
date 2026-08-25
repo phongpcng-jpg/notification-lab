@@ -138,10 +138,10 @@ function buildConclusionAndRecommendations(mainCells: AggregatedCell[], hCells: 
 function buildMarkdown(mainCells: AggregatedCell[], hCells: AggregatedCell[], totalRuns: number): string {
   const generatedAt = new Date().toISOString();
   let md = `# Notification Technology — Final Comparison Report (Generated)\n\n`;
-  md += `Sinh tự động lúc **${generatedAt}** bằng \\`benchmark/runners/generateFinalReport.ts\\`, `;
-  md += `tổng hợp từ **${totalRuns}** file kết quả trong \\`results/processed/\\`.\n\n`;
+  md += `Sinh tự động lúc **${generatedAt}** bằng \`benchmark/runners/generateFinalReport.ts\`, `;
+  md += `tổng hợp từ **${totalRuns}** file kết quả trong \`results/processed/\`.\n\n`;
   md += `> Đây là bản bổ sung số liệu THẬT cho phần "Experimental Comparison Matrix" (mục 9) `;
-  md += `trong \\`docs/final-report/FINAL-COMPARISON-REPORT.md\\`. Đọc cả 2 file để có bức tranh đầy đủ `;
+  md += `trong \`docs/final-report/FINAL-COMPARISON-REPORT.md\`. Đọc cả 2 file để có bức tranh đầy đủ `;
   md += `(lý thuyết + thực nghiệm tách biệt rõ — theo Rule Section 31).\n\n`;
 
   md += `## Experimental Comparison Matrix (Scenarios A–G, I–J)\n\n`;
@@ -178,12 +178,12 @@ function buildMarkdown(mainCells: AggregatedCell[], hCells: AggregatedCell[], to
   }
 
   md += `\n## Cách đọc bảng\n\n`;
-  md += `- **Runs** = số lần chạy được tổng hợp cho ô này. \\`Runs=1\\` nghĩa là CHƯA đủ để đánh giá độ ổn định (Rule 29) — nên chạy lại (\\`--repeats=\\`) trước khi kết luận.\n`;
+  md += `- **Runs** = số lần chạy được tổng hợp cho ô này. \`Runs=1\` nghĩa là CHƯA đủ để đánh giá độ ổn định (Rule 29) — nên chạy lại (\`--repeats=\`) trước khi kết luận.\n`;
   md += `- **p50/p95/p99** là trung bình của percentile được tính ở từng run; đây không phải percentile pooled từ toàn bộ raw samples.\n`;
   md += `- **p95 stddev** = độ lệch chuẩn của p95 giữa các lần chạy; số càng nhỏ tương đối với p95 thì kết quả càng ổn định.\n`;
   md += `- **Duplicates** không đồng nghĩa delivery failure; trong at-least-once delivery, duplicate/recovery pressure phải được đọc cùng cursor/deduplication behavior.\n`;
   md += `- **Errors** và **Reconnects** là operational/recovery signals; delivery rate vẫn cần được xem riêng.\n`;
-  md += `- Môi trường chạy (Node version, OS, hostname) được ghi trong từng file \\`results/processed/*.json\\` (field \\`environment\\`).\n`;
+  md += `- Môi trường chạy (Node version, OS, hostname) được ghi trong từng file \`results/processed/*.json\` (field \`environment\`).\n`;
 
   md += buildExperimentalAnalysis(mainCells, hCells);
   md += buildConclusionAndRecommendations(mainCells, hCells);
