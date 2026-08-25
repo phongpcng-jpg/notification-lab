@@ -1,10 +1,10 @@
-# Experimental Analysis — A–G
+# Experimental Analysis — A–J and H
 
-> **Evidence status:** This document interprets the completed A–G benchmark results supplied from `benchmark/results/processed/`. It does not replace the generated result matrix. Numerical values below are the observed aggregate values used for the analysis.
+> **Evidence status:** This document interprets the completed benchmark results stored in `benchmark/results/processed/`. It does not replace the generated result matrix. Numerical values below are observed aggregate values used for analysis.
 
 ## 1. Purpose
 
-This document converts the A–G measurements into technical findings while keeping three things separate:
+This document converts the benchmark measurements into technical findings while keeping three things separate:
 
 1. measured benchmark results;
 2. implementation/architecture explanations;
@@ -25,15 +25,11 @@ Scenario A is the normal-workload baseline.
 | SSE | 1026 | 1045 | 1051 | 100.0% |
 | WebSocket | 813 | 835 | 835 | 100.0% |
 
-Short Polling has a materially larger latency tail: approximately 4.4 s at p95 versus less than 1.1 s for the other three transports.
-
-This supports the architectural expectation that periodic polling introduces request/discovery waiting overhead. It does **not** establish WebSocket as universally fastest; it only shows that WebSocket had the lowest observed latency in this workload.
-
----
+Short Polling has a materially larger latency tail in the benchmarked workload. WebSocket had the lowest observed latency in this workload, but this does not establish a universal ranking.
 
 ## 3. Scenario B — Burst
 
-Scenario B uses 20 subscribers and a burst of 100 posts. Its scenario definition explicitly targets queue/fan-out behavior, latency and duplicate handling (`benchmark/scenarios/B.json`).
+Scenario B uses a concentrated burst workload targeting queue/fan-out behavior.
 
 | Transport | p50 (ms) | p95 (ms) | p99 (ms) | Delivery | Errors |
 |---|---:|---:|---:|---:|---:|
@@ -42,49 +38,31 @@ Scenario B uses 20 subscribers and a burst of 100 posts. Its scenario definition
 | SSE | 889 | 1297 | 1419 | 100.0% | 0 |
 | WebSocket | 771 | 1214 | 1383 | 100.0% | 0 |
 
-B shows a strong separation between polling-based and persistent/server-push delivery under burst pressure.
+In the benchmarked workload, SSE/WebSocket separated clearly from polling-based delivery. Long Polling is an important reliability counterexample because its aggregate delivery was 87.8% with 2261 errors.
 
 The backend hot path is approximately:
 
 ```text
 createPost
-  -> validate author DB
-  -> post DB insert/read
+  -> DB validation / post insert
   -> fan-out DB transaction
   -> commit
   -> DB re-query after commit
-  -> SSE/WebSocket publish
-  -> WebSocket socket.send
+  -> PushHub publish
+  -> socket.send
   -> client ACK
   -> ACK DB write
 ```
 
-Therefore the E2E latency must not be attributed entirely to `socket.send`. Under burst/fan-out contention, database work, fan-out processing and event-loop pressure can delay notification availability before the transport write.
-
-**Finding:** persistent server-push transports handled the tested burst substantially better than polling-based delivery, while server-side fan-out/database/event-loop work is an important contributor to total latency.
-
----
+The measured E2E latency therefore cannot be attributed entirely to `socket.send`; database work, fan-out processing and event-loop pressure can delay notification availability before transport transmission.
 
 ## 4. Scenario C — Massive Fan-out
 
-Scenario C increases the subscriber population to 1,000 and targets fan-out scale (`benchmark/scenarios/C.json`).
-
-| Transport | p50 (ms) | p95 (ms) | p99 (ms) | Delivery |
-|---|---:|---:|---:|---:|
-| Short Polling | 4410 | 5227 | 5471 | 92.5% |
-| Long Polling | 968 | 1500 | 1601 | 100.0% |
-| SSE | 1396 | 1518 | 1523 | 100.0% |
-| WebSocket | 634 | 1160 | 1256 | 100.0% |
-
-At the tested scale, Short Polling has both higher latency and lower delivery completeness. Long Polling, SSE and WebSocket achieved 100% delivery.
-
-The conclusion is workload-bounded: at this tested fan-out size and event rate, persistent/server-push transports maintained better latency and delivery completeness than Short Polling. This should not be generalized to arbitrary production-scale subscriber counts without additional experiments.
-
----
+At the tested fan-out size, Short Polling had higher latency and lower delivery completeness, while Long Polling, SSE and WebSocket reached 100% delivery. This is evidence about the benchmarked workload, not a production-scale capacity limit.
 
 ## 5. Scenario D — High-frequency
 
-Scenario D uses a sustained fixed rate of 10 posts/second with 50 subscribers rather than a single burst. Its purpose is continuous high-frequency load (`benchmark/scenarios/D.json`).
+Scenario D uses sustained high event frequency.
 
 | Transport | p50 (ms) | p95 (ms) | p99 (ms) | Delivery |
 |---|---:|---:|---:|---:|
@@ -93,20 +71,11 @@ Scenario D uses a sustained fixed rate of 10 posts/second with 50 subscribers ra
 | SSE | 870 | 1305 | 1435 | 100.0% |
 | WebSocket | 715 | 1140 | 1191 | 100.0% |
 
-D reinforces the observation that polling request overhead becomes increasingly visible as notification frequency rises. The three long-lived transports remain much closer to one another while Short Polling develops a substantially larger tail.
-
-B and D should be interpreted together:
-
-- **B:** concentrated burst pressure;
-- **D:** sustained high-frequency pressure.
-
-Their different workload shapes mean they are complementary rather than duplicate experiments.
-
----
+In the benchmarked workload, polling request overhead is substantially more visible than for the long-lived transports.
 
 ## 6. Scenario E — Connection Storm
 
-Scenario E stresses connection establishment by ramping 300 subscribers over approximately two seconds (`benchmark/scenarios/E.json`).
+Scenario E stresses connection establishment.
 
 | Transport | p50 (ms) | p95 (ms) | p99 (ms) | Delivery |
 |---|---:|---:|---:|---:|
@@ -115,15 +84,11 @@ Scenario E stresses connection establishment by ramping 300 subscribers over app
 | SSE | 1011 | 1494 | 1552 | 100.0% |
 | WebSocket | 1121 | 1814 | 1949 | 100.0% |
 
-E is an important counterexample to any claim that WebSocket is always the lowest-latency option. SSE has the lowest p95 among the three long-lived transports in this workload, while WebSocket has the highest.
-
-The experiment therefore indicates that connection lifecycle cost matters in addition to steady-state notification transmission.
-
----
+E is a counterexample to any universal claim that WebSocket has the lowest latency: in this benchmarked workload, SSE had the lowest p95 among the long-lived transports.
 
 ## 7. Scenario F — Reconnection Storm
 
-Scenario F disconnects all subscribers and reconnects them at the configured storm point. The scenario definition explicitly notes that it is most meaningful for SSE/WebSocket/Long Polling because Short Polling has no equivalent persistent-connection lifecycle (`benchmark/scenarios/F.json`).
+F exercises reconnect/recovery behavior. Short Polling has no persistent connection lifecycle equivalent, so its reconnect metric is not directly comparable.
 
 | Transport | p50 (ms) | p95 (ms) | p99 (ms) | Delivery | Reconnects | Duplicates |
 |---|---:|---:|---:|---:|---:|---:|
@@ -132,105 +97,66 @@ Scenario F disconnects all subscribers and reconnects them at the configured sto
 | SSE | 1189 | 1834 | 2143 | 100.0% | 300 | 1389 |
 | WebSocket | 697 | 1097 | 1163 | 100.0% | 300 | 1713 |
 
-F demonstrates why latency, delivery completeness, reconnect behavior and duplicates must be evaluated separately.
+In the benchmarked workload, WebSocket combined 100% delivery with the lowest p50/p95 among the transports while also recording the highest duplicate count. This is consistent with the project's at-least-once-oriented cursor recovery model. Duplicate delivery is therefore a separate reliability/recovery signal, not automatically a transport failure.
 
-WebSocket achieved 100% delivery and the lowest p50/p95 among the tested transports, but it also produced the largest duplicate count. This does **not** by itself indicate a transport failure. The project uses cursor-based recovery and at-least-once-oriented delivery rather than exactly-once user-visible delivery. Replayed notifications are therefore possible during reconnect/catch-up, and client-side deduplication remains part of the delivery model.
-
-The WebSocket ACK records acknowledgement state in the backend; it is not evidence that a human user actually saw or read the notification.
-
-**Finding:** reconnection recovery creates a measurable trade-off between loss avoidance and duplicate delivery. Duplicates should therefore be reported separately from delivery failure.
-
----
+The WebSocket ACK records application acknowledgement in the backend; it is not evidence that a human user saw or read the notification.
 
 ## 8. Scenario G — Slow Client
 
-Scenario G simulates slow application-level processing by making 30% of clients slow and adding a three-second delay (`benchmark/scenarios/G.json`). It is **not** a true TCP/socket-buffer backpressure experiment.
+G simulates slow application-level processing. It is **not** a true TCP/socket-buffer backpressure experiment.
+
+In the benchmarked workload, Short Polling had the largest latency tail, while Long Polling had a higher p95/p99 than SSE/WebSocket. The conclusion is limited to application-level slow-client behavior.
+
+## 9. Scenario H — Configured Toxiproxy impairment profile
+
+H is intentionally separate from the main matrix and represents only the **configured Toxiproxy impairment profile** used by the benchmark.
+
+| Transport | p50 (ms) | p95 (ms) | p99 (ms) | Delivery | Errors | Reconnects |
+|---|---:|---:|---:|---:|---:|---:|
+| Long Polling | 671 | 1096 | 1174 | 100.0% | 0 | 0 |
+| Short Polling | 3324 | 5643 | 5930 | 100.0% | 0 | 0 |
+| SSE | 684 | 1413 | 1430 | 100.0% | 0 | 0 |
+| WebSocket | 775 | 1156 | 1220 | 100.0% | 0 | 0 |
+
+The benchmarked H workload produced no observed delivery failures, errors or reconnects. This does not characterize arbitrary Internet conditions; it only describes the configured impairment profile.
+
+## 10. Scenario I — Large Payload
+
+I evaluates larger notification payloads.
 
 | Transport | p50 (ms) | p95 (ms) | p99 (ms) | Delivery |
 |---|---:|---:|---:|---:|
-| Short Polling | 3548 | 6939 | 8273 | 97.1% |
-| Long Polling | 864 | 3102 | 3742 | 100.0% |
-| SSE | 788 | 1196 | 1208 | 100.0% |
-| WebSocket | 748 | 1198 | 1300 | 100.0% |
+| Short Polling | 3544 | 5823 | 5946 | 100.0% |
+| Long Polling | 843 | 1212 | 1255 | 100.0% |
+| SSE | 1017 | 1434 | 1448 | 100.0% |
+| WebSocket | 834 | 1352 | 1424 | 100.0% |
 
-G shows a large tail-latency penalty for Short Polling and a larger p95/p99 for Long Polling than for SSE/WebSocket.
+In the benchmarked workload, larger payloads did not produce delivery failure. The result does not establish a maximum supported payload size.
 
-The conclusion must remain limited to application-level slow-client behavior. G should **not** be used as evidence about real network backpressure, kernel socket buffers, TCP congestion or browser transport buffering.
+## 11. Scenario J — Mixed Workload
 
----
+J combines burst, reconnect storm, slow clients and larger payloads.
 
-# 9. Cross-scenario Findings
+| Transport | p50 (ms) | p95 (ms) | p99 (ms) | Delivery | Reconnects | Duplicates |
+|---|---:|---:|---:|---:|---:|---:|
+| Short Polling | 2703 | 5174 | 6168 | 100.0% | 0 | 2543 |
+| Long Polling | 3667 | 7545 | 8740 | 100.0% | 0 | 0 |
+| SSE | 1051 | 1556 | 1728 | 100.0% | 300 | 6000 |
+| WebSocket | 801 | 1277 | 1377 | 100.0% | 300 | 4317 |
 
-## 9.1 Persistent/server-push transports generally reduce discovery latency
+J shows the strongest interaction between latency, recovery and duplicate behavior in the benchmarked workloads. The high duplicate counts should be interpreted with the project's at-least-once-oriented recovery model rather than as delivery failure, since delivery remained 100%.
 
-Across A–G, Short Polling consistently exhibits a materially larger latency tail than the long-lived/server-push alternatives, especially in A, B, D and G.
+## 12. Cross-scenario findings
 
-The experiment supports the architectural expectation that periodic polling introduces request/discovery waiting overhead. It does not prove that one persistent transport is universally superior.
+1. **Short Polling generally had the largest latency tail in the benchmarked workloads.** This is especially visible in A, B, D, G and I/J.
+2. **SSE and WebSocket were often lower-latency in the benchmarked workloads with burst or sustained event activity.** This is workload-specific evidence, not a universal protocol ranking.
+3. **Long Polling is a useful intermediate model in the benchmarked workloads**, but B shows that burst/fan-out contention can coincide with poor reliability.
+4. **Latency, delivery, reconnects and duplicates are separate dimensions.** F and J make this particularly clear.
+5. **Server-side work matters.** B instrumentation shows that DB/fan-out/event-loop work can contribute materially to notification latency before transport transmission.
+6. **No single transport wins every benchmarked workload.** E is an explicit counterexample to a WebSocket-always-fastest claim.
 
-## 9.2 WebSocket is not universally the fastest transport
+## 13. Experimental conclusion
 
-WebSocket has strong results in A, B, C, D and F, but E is a clear counterexample: SSE has a lower p95 than WebSocket during the connection-storm workload.
+Across the benchmarked A–J workloads plus the configured H impairment profile, the strongest practical conclusion is requirement-driven rather than a universal ranking. Short Polling favors simplicity and stateless HTTP at the cost of higher latency tails in many benchmarked workloads. Long Polling provides server-side waiting without a persistent bidirectional channel but can be sensitive to contention. SSE is a strong fit for one-way in-app realtime with browser-managed reconnect. WebSocket is a strong fit when bidirectional interaction and application-level ACK justify its additional connection/state complexity. Web Push should be evaluated separately for background/offline and OS-level notification use cases.
 
-The appropriate conclusion is workload-dependent rather than a global ranking.
-
-## 9.3 Under burst pressure, server-side work matters in addition to transport transmission
-
-Scenario B is particularly useful because backend instrumentation observes the hot path rather than only client-visible latency.
-
-```text
-DB validation/insert
-    -> notification fan-out transaction
-    -> post-commit notification re-query
-    -> PushHub publish
-    -> socket.send
-    -> client ACK
-    -> ACK DB write
-```
-
-A transport comparison must therefore not attribute the entire E2E latency to `socket.send`. Database contention, fan-out processing and event-loop pressure can delay notification availability before the transport write.
-
-## 9.4 Delivery reliability and duplicate behavior are separate dimensions
-
-Scenario F is the clearest example: WebSocket achieved 100% delivery while also recording a high duplicate count during reconnect recovery.
-
-```text
-low latency
-    != delivery completeness
-    != reconnect success
-    != duplicate-free delivery
-    != user-visible acknowledgement
-```
-
-These dimensions should remain separate in the final comparison.
-
-## 9.5 Workload shape changes relative transport behavior
-
-| Scenario | Primary stress |
-|---|---|
-| A | Normal baseline |
-| B | Concentrated burst |
-| C | Fan-out scale |
-| D | Sustained event frequency |
-| E | Connection establishment |
-| F | Reconnection/recovery |
-| G | Slow application-level clients |
-
-The results show why A–G should not be collapsed into a single aggregate score or used to declare a universal benchmark winner.
-
----
-
-# 10. Experimental Conclusion for A–G
-
-Within the tested A–G workloads, long-lived/server-push transports generally achieved lower latency and higher delivery completeness than Short Polling. WebSocket showed particularly strong results under burst, sustained high-frequency and reconnection workloads, while SSE remained competitive and had the lowest p95 among the long-lived transports in the connection-storm scenario.
-
-The more important finding is that **transport-level transmission is only one part of notification latency**. Under burst/fan-out pressure, server-side database work, fan-out processing and event-loop contention can materially affect the time before a notification reaches the client. Reconnect scenarios expose a separate trade-off between recovery completeness and duplicate delivery.
-
-Therefore, the A–G experiments support a requirement-driven decision rather than a universal ranking:
-
-- **Short Polling:** appropriate when simplicity/stateless HTTP is more important than low latency and update frequency is modest.
-- **Long Polling:** useful when server-driven waiting is needed but SSE/WebSocket is undesirable or unavailable.
-- **SSE:** appropriate for predominantly server-to-client realtime streams where browser-managed reconnect is valuable and bidirectional messaging is unnecessary.
-- **WebSocket:** appropriate when bidirectional communication or very frequent realtime interaction justifies additional connection/state complexity.
-- **Web Push:** evaluate separately for offline/background or OS-level notifications because its browser/Push Service delivery path is fundamentally different from the four in-app transports.
-
-These conclusions apply only to the tested implementation, workload configurations and execution environment. The completed A–G analysis should now be read together with the generated H, I and J results; those scenarios extend coverage to the configured Toxiproxy impairment profile, payload-size behavior and mixed workload respectively.
+These conclusions apply to the tested implementation, workload configurations and execution environment. They should not be interpreted as production capacity limits or universal Internet performance claims.
