@@ -1,4 +1,4 @@
-import { eventLoopUtilization, monitorEventLoopDelay, performance } from "node:perf_hooks";
+import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 
 export interface HotPathSpan {
   name: string;
@@ -40,9 +40,7 @@ function prune(): void {
   }
 }
 
-export function startHotPathTrace(metadata: {
-  notificationIds?: number[];
-} = {}): HotPathTrace {
+export function startHotPathTrace(metadata: { notificationIds?: number[] } = {}): HotPathTrace {
   const traceId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const trace: HotPathTrace = {
     traceId,
@@ -68,21 +66,10 @@ export function addHotPathSpan(
   metadata?: Record<string, number | string | boolean>
 ): void {
   if (!enabled || !trace) return;
-  trace.spans.push({
-    name,
-    durationMs: Math.max(0, finishedAtMonoMs - startedAtMonoMs),
-    startedAtMonoMs,
-    finishedAtMonoMs,
-    metadata,
-  });
+  trace.spans.push({ name, durationMs: Math.max(0, finishedAtMonoMs - startedAtMonoMs), startedAtMonoMs, finishedAtMonoMs, metadata });
 }
 
-export function measureHotPath<T>(
-  trace: HotPathTrace | undefined,
-  name: string,
-  fn: () => T,
-  metadata?: Record<string, number | string | boolean>
-): T {
+export function measureHotPath<T>(trace: HotPathTrace | undefined, name: string, fn: () => T, metadata?: Record<string, number | string | boolean>): T {
   if (!enabled || !trace) return fn();
   const start = performance.now();
   try {
@@ -92,19 +79,14 @@ export function measureHotPath<T>(
   }
 }
 
-export function finishHotPathTrace(trace: HotPathTrace, beforeElu: ReturnType<typeof eventLoopUtilization>): void {
-  if (!enabled) return;
-  const delta = eventLoopUtilization(beforeElu);
-  trace.eventLoop = {
-    utilization: delta.utilization,
-    activeMs: delta.active,
-    idleMs: delta.idle,
-    processDelayP99Ms: p99DelayMs(),
-  };
+export function beginEventLoopMeasurement(): ReturnType<typeof performance.eventLoopUtilization> {
+  return performance.eventLoopUtilization();
 }
 
-export function beginEventLoopMeasurement(): ReturnType<typeof eventLoopUtilization> {
-  return eventLoopUtilization();
+export function finishHotPathTrace(trace: HotPathTrace, beforeElu: ReturnType<typeof performance.eventLoopUtilization>): void {
+  if (!enabled) return;
+  const delta = performance.eventLoopUtilization(beforeElu);
+  trace.eventLoop = { utilization: delta.utilization, activeMs: delta.active, idleMs: delta.idle, processDelayP99Ms: p99DelayMs() };
 }
 
 export function findHotPathTracesByNotificationIds(ids: number[]): HotPathTrace[] {
@@ -119,13 +101,7 @@ export function recordAckDbSpan(traceIds: string[], durationMs: number, batchSiz
     const trace = traces.get(traceId);
     if (!trace) continue;
     const end = performance.now();
-    trace.spans.push({
-      name: "ack.db_write",
-      durationMs,
-      startedAtMonoMs: end - durationMs,
-      finishedAtMonoMs: end,
-      metadata: { batchSize },
-    });
+    trace.spans.push({ name: "ack.db_write", durationMs, startedAtMonoMs: end - durationMs, finishedAtMonoMs: end, metadata: { batchSize } });
   }
 }
 
@@ -134,10 +110,5 @@ export function recordAckReceived(traceId: string | undefined, queueWaitMs: numb
   const trace = traces.get(traceId);
   if (!trace) return;
   const now = performance.now();
-  trace.spans.push({
-    name: "ack.received_to_flush",
-    durationMs: Math.max(0, queueWaitMs),
-    startedAtMonoMs: now - queueWaitMs,
-    finishedAtMonoMs: now,
-  });
+  trace.spans.push({ name: "ack.received_to_flush", durationMs: Math.max(0, queueWaitMs), startedAtMonoMs: now - queueWaitMs, finishedAtMonoMs: now });
 }
