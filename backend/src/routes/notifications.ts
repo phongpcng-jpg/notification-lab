@@ -38,7 +38,11 @@ export async function notificationRoutes(app: FastifyInstance) {
       )
       .all(userId, after, limit) as NotificationView[];
 
-    return { notifications: rows };
+    const nextAfter = rows.length > 0
+      ? Math.max(...rows.map((row) => row.id))
+      : after;
+
+    return { notifications: rows, nextAfter };
   });
 
   // POST /notifications/:id/read { userId }

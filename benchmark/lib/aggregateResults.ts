@@ -24,7 +24,7 @@ export interface ProcessedResult {
   deliveryRate: number | null;
   totalConnectionErrors: number;
   totalReconnects: number;
-  latency: {
+  endToEndLatency: {
     count: number;
     minMs: number;
     p50Ms: number;
@@ -110,9 +110,15 @@ export function aggregateByScenarioTransport(results: ProcessedResult[]): Aggreg
   const cells: AggregatedCell[] = [];
   for (const [key, group] of groups) {
     const [scenarioId, transport] = key.split("::");
-    const p50s = group.map((g) => g.latency?.p50Ms).filter((x): x is number => x != null);
-    const p95s = group.map((g) => g.latency?.p95Ms).filter((x): x is number => x != null);
-    const p99s = group.map((g) => g.latency?.p99Ms).filter((x): x is number => x != null);
+    const p50s = group
+      .map((g) => g.endToEndLatency?.p50Ms)
+      .filter((x): x is number => x != null);
+    const p95s = group
+      .map((g) => g.endToEndLatency?.p95Ms)
+      .filter((x): x is number => x != null);
+    const p99s = group
+      .map((g) => g.endToEndLatency?.p99Ms)
+      .filter((x): x is number => x != null);
     const rates = group.map((g) => g.deliveryRate).filter((x): x is number => x != null);
 
     cells.push({

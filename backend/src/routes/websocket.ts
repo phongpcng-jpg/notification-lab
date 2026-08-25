@@ -1,159 +1,90 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import { config } from "../config.js";
-import {
-  fetchNotificationsAfter,
-  recordDeliveryBatch,
-} from "../domain/notificationQueries.js";
+import { fetchNotificationsAfter, recordAcknowledgedBatch, type AcknowledgedDelivery } from "../domain/notificationQueries.js";
 import { wsHub, type WsSubscription } from "../domain/wsHub.js";
 import { openConnection, closeConnection } from "../domain/connectionTracker.js";
 import { notificationService } from "../domain/notificationService.js";
 import { serializeNotificationForClient } from "../domain/notificationSerialization.js";
+import { addHotPathSpan, findHotPathTracesByNotificationIds } from "../domain/performanceInstrumentation.js";
 import type { NotificationView } from "../domain/types.js";
 
-// Nếu buffer gửi (chưa flush xuống OS) vượt ngưỡng này, coi là backpressure —
-// bỏ qua gửi thêm để tránh out-of-memory nếu client chậm (Scenario G — Slow Client).
-const BACKPRESSURE_THRESHOLD_BYTES = 1_000_000; // 1MB
+const BACKPRESSURE_THRESHOLD_BYTES = 1_000_000;
+const ACK_BATCH_SIZE = 100;
+const ACK_FLUSH_MS = 50;
 
-/**
- * WEBSOCKET
- * ─────────
- * GET /ws?userId=&after=  (upgrade từ HTTP, dùng @fastify/websocket, dựa
- * trên thư viện `ws` — đúng ADR-001: không dùng Socket.IO để đo đúng hành vi
- * WebSocket thuần).
- *
- * Đây là transport 2 CHIỀU DUY NHẤT trong 5 transport của project:
- * - Server → Client: notification (catch-up + live), connected/error message.
- * - Client → Server: `{ type: 'ack', notificationId }` — xác nhận đã nhận,
- *   cập nhật status 'acknowledged' (khác 'delivered' — xem
- *   `notificationService.markAcknowledged()`), thể hiện đúng khả năng mà
- *   SSE/Polling không có.
- *
- * Heartbeat: dùng ping/pong Ở TẦNG GIAO THỨC WebSocket (không phải app-level
- * message) — browser tự động trả `pong` khi nhận `ping`, hoàn toàn transparent
- * với JS phía client (không cần code gì thêm ở frontend cho việc này).
- * Server chủ động ping định kỳ; nếu không nhận được pong trước lần ping kế
- * tiếp → coi là stale connection → `socket.terminate()` (đóng cứng, không
- * đợi close handshake, vì rất có thể client đã chết/mất mạng).
- *
- * Backpressure: kiểm tra `socket.bufferedAmount` trước khi gửi thêm — nếu
- * vượt ngưỡng, bỏ qua gửi (không block event loop chờ), ghi delivery_attempt
- * result='failed' để benchmark nhìn thấy được hiện tượng này (Scenario G).
- *
- * Message ordering: đảm bảo TRONG 1 kết nối (TCP ordered delivery + gửi tuần
- * tự theo thứ tự query DB ASC). KHÔNG đảm bảo giữa nhiều kết nối/tab của
- * cùng 1 user (mỗi tab là 1 luồng độc lập).
- */
 export async function websocketRoutes(app: FastifyInstance) {
-  app.get<{ Querystring: { userId: string; after?: string } }>(
-    "/ws",
-    { websocket: true },
-    (socket: WebSocket, req) => {
-      const userId = Number(req.query.userId);
-      if (!userId) {
-        socket.send(
-          JSON.stringify({ type: "error", message: "userId is required" })
-        );
-        socket.close(1008, "userId is required");
+  app.get<{ Querystring: { userId: string; after?: string } }>("/ws", { websocket: true }, (socket: WebSocket, req) => {
+    const userId = Number(req.query.userId);
+    if (!userId) { socket.send(JSON.stringify({ type: "error", message: "userId is required" })); socket.close(1008, "userId is required"); return; }
+    const after = Number(req.query.after ?? 0);
+    const connectionId = openConnection(userId, "websocket");
+    const pendingAcks: AcknowledgedDelivery[] = [];
+    const sentCreatedAtMs = new Map<number, number>();
+    let ackFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushAcks = () => {
+      ackFlushTimer = null;
+      if (pendingAcks.length === 0) return;
+      const batch = pendingAcks.splice(0, pendingAcks.length);
+      const dbStart = performance.now();
+      recordAcknowledgedBatch(batch);
+      const dbDuration = performance.now() - dbStart;
+      const traceIds = [...new Set(batch.flatMap((item) => findHotPathTracesByNotificationIds([item.notificationId]).map((trace) => trace.traceId)))];
+      for (const traceId of traceIds) {
+        const traces = findHotPathTracesByNotificationIds(batch.map((item) => item.notificationId));
+        for (const trace of traces.filter((t) => t.traceId === traceId)) {
+          addHotPathSpan(trace, "ack.db_write", dbStart, dbStart + dbDuration, { batchSize: batch.length });
+        }
+      }
+      for (const item of batch) sentCreatedAtMs.delete(item.notificationId);
+    };
+
+    const queueAck = (notificationId: number) => {
+      const createdAtMs = sentCreatedAtMs.get(notificationId);
+      if (createdAtMs === undefined) return;
+      if (pendingAcks.some((item) => item.notificationId === notificationId)) return;
+      pendingAcks.push({ notificationId, recipientId: userId, latencyMs: Math.max(0, Date.now() - createdAtMs) });
+      if (pendingAcks.length >= ACK_BATCH_SIZE) { flushAcks(); return; }
+      if (!ackFlushTimer) ackFlushTimer = setTimeout(flushAcks, ACK_FLUSH_MS);
+    };
+
+    function sendNotification(row: NotificationView): void {
+      if (socket.readyState !== socket.OPEN) return;
+      if (socket.bufferedAmount > BACKPRESSURE_THRESHOLD_BYTES) {
+        notificationService.recordDeliveryAttempt({ notificationId: row.id, transport: "websocket", result: "failed", errorReason: "backpressure: bufferedAmount vượt ngưỡng" });
         return;
       }
-      const after = Number(req.query.after ?? 0);
-
-      const connectionId = openConnection(userId, "websocket");
-
-      function trySend(obj: unknown): "sent" | "backpressure" | "closed" {
-        if (socket.readyState !== socket.OPEN) return "closed";
-        if (socket.bufferedAmount > BACKPRESSURE_THRESHOLD_BYTES) {
-          return "backpressure";
-        }
-        socket.send(JSON.stringify(obj));
-        return "sent";
-      }
-
-      function sendNotification(row: NotificationView): void {
-        const result = trySend({
-          type: "notification",
-          data: serializeNotificationForClient(row),
-        });
-        if (result === "sent") {
-          recordDeliveryBatch([row], "websocket", Date.now());
-        } else if (result === "backpressure") {
-          notificationService.recordDeliveryAttempt({
-            notificationId: row.id,
-            transport: "websocket",
-            result: "failed",
-            errorReason: "backpressure: bufferedAmount vượt ngưỡng",
-          });
-        }
-        // result === "closed": socket đã đóng, không ghi gì thêm — 'close'
-        // handler sẽ lo phần cleanup.
-      }
-
-      // 1) Catch-up
-      const missed = fetchNotificationsAfter(userId, after, 200);
-      for (const row of missed) sendNotification(row);
-
-      // 2) Đăng ký nhận notification mới
-      const subscription: WsSubscription = {
-        socket,
-        connectionId,
-        onNotification: sendNotification,
-        forceClose: () => {
-          if (socket.readyState === socket.OPEN) socket.close(1001, "server_shutdown");
-        },
-      };
-      const unsubscribe = wsHub.subscribe(userId, subscription);
-
-      socket.send(JSON.stringify({ type: "connected", userId, connectionId }));
-
-      // 3) Heartbeat ping/pong ở tầng giao thức
-      let isAlive = true;
-      socket.on("pong", () => {
-        isAlive = true;
-      });
-      const heartbeatTimer = setInterval(() => {
-        if (!isAlive) {
-          socket.terminate(); // sẽ trigger 'close' -> cleanup() bên dưới
-          return;
-        }
-        isAlive = false;
-        socket.ping();
-      }, config.wsHeartbeatMs);
-
-      // 4) Nhận message từ client — minh chứng tính 2 chiều thật
-      socket.on("message", (raw: Buffer) => {
-        let msg: unknown;
-        try {
-          msg = JSON.parse(raw.toString("utf-8"));
-        } catch {
-          return; // malformed message — bỏ qua, không crash connection
-        }
-        if (
-          typeof msg === "object" &&
-          msg !== null &&
-          "type" in msg &&
-          (msg as { type: unknown }).type === "ack" &&
-          "notificationId" in msg &&
-          typeof (msg as { notificationId: unknown }).notificationId === "number"
-        ) {
-          notificationService.markAcknowledged(
-            (msg as { notificationId: number }).notificationId,
-            userId
-          );
-        }
-      });
-
-      // 5) Cleanup
-      let cleaned = false;
-      const cleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
-        clearInterval(heartbeatTimer);
-        unsubscribe();
-        closeConnection(connectionId, "client_disconnect");
-      };
-      socket.on("close", cleanup);
-      socket.on("error", cleanup);
+      const sendStart = performance.now();
+      const serverSentAtMs = Date.now();
+      const payload = JSON.stringify({ type: "notification", data: serializeNotificationForClient(row, serverSentAtMs) });
+      socket.send(payload);
+      sentCreatedAtMs.set(row.id, row.created_at * 1000);
+      const traces = findHotPathTracesByNotificationIds([row.id]);
+      for (const trace of traces) addHotPathSpan(trace, "websocket.socket_send", sendStart, performance.now(), { notificationId: row.id, bufferedAmount: socket.bufferedAmount });
     }
-  );
+
+    const subscription: WsSubscription = { socket, connectionId, onNotification: sendNotification, forceClose: () => { if (socket.readyState === socket.OPEN) socket.close(1001, "server_shutdown"); } };
+    const unsubscribe = wsHub.subscribe(userId, subscription);
+
+    const replayStart = performance.now();
+    const missed = fetchNotificationsAfter(userId, after, 200);
+    for (const row of missed) sendNotification(row);
+    const replayTraces = missed.flatMap((row) => findHotPathTracesByNotificationIds([row.id]));
+    for (const trace of replayTraces) addHotPathSpan(trace, "websocket.catchup_db_requery", replayStart, performance.now(), { rowCount: missed.length });
+
+    socket.send(JSON.stringify({ type: "connected", userId, connectionId }));
+    let isAlive = true;
+    socket.on("pong", () => { isAlive = true; });
+    const heartbeatTimer = setInterval(() => { if (!isAlive) { socket.terminate(); return; } isAlive = false; socket.ping(); }, config.wsHeartbeatMs);
+
+    socket.on("message", (raw: Buffer) => {
+      let msg: unknown; try { msg = JSON.parse(raw.toString("utf-8")); } catch { return; }
+      if (typeof msg === "object" && msg !== null && "type" in msg && (msg as { type: unknown }).type === "ack" && "notificationId" in msg && typeof (msg as { notificationId: unknown }).notificationId === "number") queueAck((msg as { notificationId: number }).notificationId);
+    });
+
+    let cleaned = false;
+    const cleanup = () => { if (cleaned) return; cleaned = true; clearInterval(heartbeatTimer); if (ackFlushTimer) clearTimeout(ackFlushTimer); flushAcks(); sentCreatedAtMs.clear(); unsubscribe(); closeConnection(connectionId, "client_disconnect"); };
+    socket.on("close", cleanup); socket.on("error", cleanup);
+  });
 }

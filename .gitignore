@@ -9,6 +9,7 @@ node_modules/
 .env.*
 !.env.example
 !backend/.env.example
+!benchmark/.env.example
 
 # ==== Build output ====
 dist/
@@ -66,7 +67,7 @@ backend/data/subscriptions*.json
 *.vapid.json
 
 # ==== TLS / certs ====
-# Cần cho WSS/SSE qua HTTPS khi test Poor Network / Connection Storm ở local
+# Cần cho WSS/SSE qua HTTPS khi test Poor Network / Connection Storm
 *.pem
 *.key
 *.crt

@@ -1,167 +1,255 @@
 # Benchmark Framework
 
-> **Trạng thái: framework đã implement đầy đủ, CHƯA CÓ LẦN CHẠY THẬT NÀO.**
-> Sandbox dùng để viết code này không có network nên không `npm install`
-> được — mọi con số trong repo (nếu có) đều phải ghi `NOT RUN`/`PENDING` cho
-> tới khi bạn tự chạy trên máy có mạng (Rule 51 — no fake benchmark).
+> **Trạng thái:** framework benchmark đã implement đầy đủ cho 4 transport: Short Polling, Long Polling, SSE và WebSocket. Web Push có workflow dispatch riêng vì end-to-end browser receipt không thể được đo bằng Node.js simulated client.
+>
+> Scenario A–J đã được định nghĩa. Common benchmark mặc định chạy A–G, I, J; Scenario H là network scenario chạy riêng với Toxiproxy.
+>
+> **Lưu ý về kết quả:** benchmark framework có thể chạy local hoặc trên môi trường benchmark được cấu hình, nhưng chỉ kết quả được sinh và lưu trong `results/processed/` mới được dùng làm experimental evidence. Không tự coi các lần chạy thủ công hoặc kết quả console là official benchmark result. Không đưa số liệu giả vào report; khi chưa có processed result phù hợp, report phải để `NOT RUN`/`PENDING`.
 
 ## Kiến trúc
 
-```
+```text
 benchmark/
 ├── lib/                    # dùng chung
-│   ├── types.ts             # ScenarioConfig, Transport
-│   ├── apiClient.ts          # gọi REST API thật (không đụng DB trực tiếp)
-│   ├── pickPublisher.ts       # chọn user có nhiều follower nhất làm "publisher"
-│   ├── payload.ts              # sinh script theo payloadSize (small/medium/large)
-│   ├── random.ts                 # PRNG deterministic (mulberry32, seed tái lập được)
-│   ├── metrics.ts                  # tính percentile, tổng hợp ScenarioResult
-│   └── report.ts                     # ghi raw+processed, in summary
-├── generators/               # 1 SimulatedClient/transport (implement chung interface)
-│   ├── simulatedClient.ts     # interface
+│   ├── types.ts            # ScenarioConfig, Transport
+│   ├── apiClient.ts        # gọi REST API thật (không đụng DB trực tiếp)
+│   ├── pickPublisher.ts    # chọn user có nhiều follower nhất làm publisher
+│   ├── payload.ts           # sinh payload theo payloadSize
+│   ├── random.ts            # PRNG deterministic
+│   ├── metrics.ts           # percentile và ScenarioResult
+│   └── report.ts            # ghi raw/processed và summary
+├── generators/              # simulated clients cho common transports
+│   ├── simulatedClient.ts   # interface
 │   ├── shortPollingClient.ts
 │   ├── longPollingClient.ts
-│   ├── sseClient.ts             # dùng node:http thuần (giống pattern test backend)
-│   ├── websocketClient.ts        # dùng thư viện `ws`, gửi ack như frontend thật
+│   ├── sseClient.ts         # node:http
+│   ├── websocketClient.ts   # ws, ACK giống frontend protocol
 │   └── clientFactory.ts
 ├── runners/
-│   ├── run.ts                  # chạy 1 scenario trên 1 transport
-│   ├── compareTransports.ts     # chạy CÙNG scenario tuần tự trên cả 4 transport, in bảng so sánh
-│   └── webPushDispatch.ts        # benchmark riêng cho Web Push (xem mục riêng bên dưới)
-├── scenarios/                 # 10 file config A-J (JSON, khớp ScenarioConfig)
+│   ├── run.ts               # 1 scenario × 1 transport
+│   ├── runAll.ts            # chạy hàng loạt
+│   ├── runNetworkScenario.ts # Scenario H / Toxiproxy
+│   ├── compareTransports.ts # cùng scenario tuần tự trên 4 transport
+│   ├── webPushDispatch.ts   # workflow riêng cho Web Push
+│   └── generateFinalReport.ts # aggregate processed results
+├── scenarios/               # 10 config A–J
 └── results/
-    ├── raw/                     # đầy đủ per-client event list — nặng nhưng full
-    ├── processed/                 # chỉ số liệu tổng hợp — nhẹ, để so sánh nhanh
-    └── reports/                     # (để dành cho báo cáo tổng hợp thủ công sau này)
+    ├── raw/                 # per-client event data
+    ├── processed/           # aggregate results used by report
+    └── reports/             # generated final reports
 ```
 
 ## Cách chạy
 
+### Chuẩn bị
+
 ```bash
 cd benchmark
 npm install
+```
 
-# Đảm bảo backend đang chạy và ĐÃ SEED dữ liệu trước:
-#   cd ../backend && npm run dev            (terminal khác)
-#   cd ../backend && npm run seed -- --users=2000 --avgFollows=50
+Backend phải đang chạy và nên được seed trước khi benchmark:
 
-# Chạy 1 scenario trên 1 transport:
+```bash
+cd ../backend
+npm run migrate
+npm run dev
+```
+
+Ở terminal khác:
+
+```bash
+cd ../backend
+npm run seed -- --users=2000 --avgFollows=50
+```
+
+Benchmark gọi REST API thật và chọn publisher dựa trên follower graph thật; nó không truy cập DB trực tiếp.
+
+### Chạy một scenario
+
+```bash
+cd benchmark
 npm run run -- --scenario=A --transport=sse
+```
 
-# Override tham số nhanh không cần sửa JSON:
+Override tham số nhanh mà không sửa JSON:
+
+```bash
 npm run run -- --scenario=D --transport=websocket --posts-per-second=20 --duration=60000
+```
 
-# So sánh cùng 1 scenario trên cả 4 transport (chạy tuần tự, không song song):
+### So sánh một scenario trên 4 transport
+
+```bash
 npm run compare -- --scenario=A
+```
 
-# Scenario H (Poor Network) — cần Toxiproxy đang chạy riêng (xem scenarios/H-README.md):
+Các transport của common benchmark là:
+
+```text
+short_polling
+long_polling
+sse
+websocket
+```
+
+### Scenario H — Poor Network
+
+Scenario H chạy qua Toxiproxy và được tách khỏi common benchmark:
+
+```bash
 npm run run-network -- --scenario=H --transport=sse
+```
 
-# ── Chạy TOÀN BỘ 9 scenario × 4 transport × 3 lần lặp (mặc định), rồi tổng hợp báo cáo ──
+Xem `scenarios/H-README.md` để biết cách chuẩn bị Toxiproxy.
+
+### Chạy toàn bộ common benchmark
+
+```bash
 npm run run-all
-npm run report
-# -> ghi results/reports/final-report.json và final-report.md (số liệu THẬT)
-
-# Chạy nặng hơn (máy mạnh, môi trường của bạn) + gồm cả Scenario H:
-npm run run-all -- --repeats=5 --subscriber-scale=10 --duration-scale=2 --include-h
 npm run report
 ```
 
-### `runAll.ts` — chạy hàng loạt
+Mặc định:
+
+```text
+9 scenarios × 4 transports × 3 repeats
+
+Scenarios:
+A B C D E F G I J
+
+Transports:
+Short Polling / Long Polling / SSE / WebSocket
+```
+
+Chạy thêm Scenario H:
+
+```bash
+npm run run-all -- --include-h
+npm run report
+```
+
+Chạy nặng hơn:
+
+```bash
+npm run run-all -- --repeats=5 --subscriber-scale=10 --duration-scale=2
+npm run report
+```
+
+## `runAll.ts` — flags
 
 | Flag | Mặc định | Ý nghĩa |
 |---|---|---|
-| `--scenarios=A,B,C` | 9 scenario (A-G,I,J) | Chọn tập scenario con |
-| `--transports=sse,websocket` | cả 4 transport | Chọn tập transport con |
-| `--repeats=N` | 3 | Số lần lặp mỗi scenario×transport (Rule repeatability) |
-| `--subscriber-scale=X` | 1 | Nhân `subscriberCount` mọi scenario lên X lần, giữ nguyên tỉ lệ tương đối giữa các scenario |
-| `--duration-scale=X` | 1 | Nhân `durationMs` mọi scenario lên X lần |
-| `--include-h` | tắt | Chạy thêm Scenario H qua Toxiproxy — **tách riêng có chủ đích**, không nằm trong lần chạy mặc định |
+| `--scenarios=A,B,C` | `A-G,I,J` | Chọn tập scenario con |
+| `--transports=sse,websocket` | cả 4 common transport | Chọn tập transport con |
+| `--repeats=N` | `3` | Số lần lặp mỗi scenario × transport |
+| `--subscriber-scale=X` | `1` | Nhân `subscriberCount` của mọi scenario lên X |
+| `--duration-scale=X` | `1` | Nhân `durationMs` của mọi scenario lên X |
+| `--include-h` | tắt | Chạy thêm Scenario H qua Toxiproxy |
 
-### `generateFinalReport.ts` — tổng hợp thành báo cáo
+Scenario H không nằm trong default matrix có chủ đích vì cần network fault injection riêng.
 
-Đọc TOÀN BỘ file trong `results/processed/` (không quan tâm bạn chạy bằng
-`run.ts`, `run-all`, hay `runNetworkScenario.ts`), gộp theo (scenario,
-transport), tính trung bình + độ lệch chuẩn giữa các lần chạy, ghi ra:
-- `results/reports/final-report.json` — máy đọc được, dùng cho tool khác nếu cần
-- `results/reports/final-report.md` — bổ sung số liệu thật cho mục 9 của
-  `docs/final-report/FINAL-COMPARISON-REPORT.md` (không tự phán tốt/xấu —
-  chỉ trình bày số liệu đo được).
+## Report generation
 
-Chạy lại `npm run report` bất cứ lúc nào sau khi có thêm kết quả mới — không
-cần chạy lại toàn bộ benchmark, chỉ cần results/processed/ có thêm file.
+`npm run report` đọc các file trong `results/processed/` và aggregate theo `(scenario, transport)`. Với các lần chạy lặp, generator tính aggregate statistics giữa các runs và ghi:
 
-Kết quả in ra console + ghi vào `results/raw/` (đầy đủ) và `results/processed/`
-(tóm tắt). Mỗi lần chạy là 1 file riêng (timestamp trong tên) — không ghi đè,
-để giữ lịch sử nhiều lần chạy (Rule: benchmark repeatability, cần chạy nhiều
-lần và so sánh variance trước khi kết luận).
+```text
+results/reports/final-report.md
+results/reports/final-report.json
+```
 
-## Cách hoạt động (tóm tắt)
+`final-report.md` là **generated output**, không phải template. Template/reference nằm ở:
 
-1. Chọn "publisher" = user có nhiều follower nhất (query qua API thật, không
-   đụng DB trực tiếp — benchmark hành xử như 1 client thật).
-2. Tạo N `SimulatedClient` (N = `subscriberCount`, giới hạn bởi follower thật
-   có trong DB) cho follower của publisher, dùng đúng transport được chọn.
-3. Kết nối clients (đồng loạt hoặc ramp-up nếu `connectionStorm.enabled`).
-4. Publisher tạo post theo `postRate` (đều đặn hoặc burst) qua **REST API
-   thật** trong `durationMs`.
-5. Nếu `reconnectStorm.enabled`: ngắt + kết nối lại toàn bộ client tại các
-   mốc thời gian định sẵn.
-6. Sau khi hết `durationMs`, đợi grace period rồi ngắt kết nối, tổng hợp
-   metrics (latency percentile, delivery rate, duplicate, error, reconnect).
+```text
+docs/final-report/FINAL-COMPARISON-REPORT.md
+```
 
-## Vì sao benchmark gắn với domain thật (post → follow → notification)
+`npm run report` không ghi đè template. Có thể chạy lại report sau khi thêm processed results mà không cần chạy lại toàn bộ benchmark.
 
-Cố tình KHÔNG có 1 "notification generator" tách rời bắn thẳng notification
-vào transport — benchmark tạo post thật qua API thật, dựa trên follow graph
-thật đã seed. Điều này đảm bảo benchmark đo đúng toàn bộ pipeline thật (fan-out
-qua `NotificationService`, không chỉ riêng transport layer), đúng yêu cầu
-"phản ánh cách hệ thống production được thiết kế" (Section 9).
+Mỗi run ghi raw và processed output riêng, giúp giữ lịch sử runs và phân tích repeatability/variance.
 
-## Giới hạn đã biết (ghi rõ, không giấu)
+## Cách hoạt động
 
-- **Chạy trên 1 máy, `localhost`** — mọi số liệu là local/synthetic benchmark
-  theo đúng Assumption A1 đã thống nhất từ đầu Phase 2, KHÔNG phải
-  production-scale benchmark (Rule 10).
-- **Scenario H (Poor Network) dùng Toxiproxy thật** — xem
-  `scenarios/H-README.md` cho cách chạy. Thiết kế ĐỘC LẬP: chỉ
-  `runners/runNetworkScenario.ts` cần Toxiproxy đang chạy, 9 scenario còn lại
-  (A-G, I, J) và `run.ts`/`compareTransports.ts` hoàn toàn không bị ảnh hưởng
-  dù Toxiproxy có cài hay không.
-- **Scenario G (Slow Client)** chỉ mô phỏng "xử lý chậm ở tầng ứng dụng"
-  (delay trước khi ghi nhận đã xử lý xong), KHÔNG mô phỏng backpressure thật
-  ở tầng socket buffer — băng thông loopback quá cao để buffer đầy trong thời
-  gian benchmark ngắn.
-- **Web Push không chạy qua `run.ts`** — xem mục riêng bên dưới.
-- **Reconnect storm với Short Polling** gần như vô nghĩa (short polling
-  không có khái niệm "connection" bền — mỗi request đã là 1 lần "kết nối
-  mới"), kết quả Scenario F trên Short Polling nên được diễn giải cẩn thận,
-  không so sánh trực tiếp 1-1 với SSE/WS/Long Polling.
-- Benchmark tự nó tốn CPU/network của MÁY CHẠY BENCHMARK (client giả lập +
-  server cùng chạy 1 máy trong setup mặc định) — nếu muốn đo chính xác hơn,
-  chạy `benchmark/` trên máy khác với `BENCHMARK_API_BASE_URL` trỏ tới server.
+1. Chọn publisher = user có nhiều follower nhất qua REST API.
+2. Tạo `SimulatedClient` cho các follower thực của publisher, giới hạn bởi `subscriberCount`.
+3. Kết nối clients; Scenario E có connection storm/ramp-up behavior theo config.
+4. Publisher tạo post thật qua REST API theo `postRate` trong `durationMs`.
+5. Nếu scenario có reconnect behavior, client được ngắt/kết nối lại theo các mốc được cấu hình.
+6. Sau `durationMs`, benchmark chờ grace period, đóng clients và tổng hợp metrics.
 
-## Web Push — vì sao tách riêng
+Benchmark cố ý tạo **post thật → follow graph thật → notification thật** thay vì bắn notification giả trực tiếp vào transport. Vì vậy kết quả phản ánh cả notification pipeline của application, không chỉ transport layer.
 
-4 transport kia (Short/Long Polling, SSE, WebSocket) đều có 1 "client
-polling/streaming loop" rõ ràng để mô phỏng. Web Push thì KHÔNG — phần nhận
-notification thật sự (Push Service đánh thức Service Worker, hiển thị OS
-notification) chỉ xảy ra trong trình duyệt thật, không thể mô phỏng bằng
-Node.js client. Vì vậy:
+## Metrics
 
-- `runners/webPushDispatch.ts` chỉ đo được thời gian server xử lý xong
-  request tạo post (KHÔNG phải thời gian `webpush.sendNotification()` hoàn
-  tất, vì việc gửi push chạy fire-and-forget — xem comment trong file).
-- Muốn xem kết quả gửi Web Push thật (thành công/thất bại theo Push Service),
-  cần tự bật Web Push qua UI trên 1 trình duyệt thật trước, rồi query bảng
-  `delivery_attempts WHERE transport='web_push'` sau khi chạy script.
-- Muốn biết notification có thực sự hiện ra hay không — chỉ quan sát được
-  bằng mắt trên trình duyệt thật, không tự động hoá được trong phạm vi
-  project này.
+Các kết quả benchmark có thể bao gồm:
 
-## Environment cần ghi lại khi báo cáo kết quả (Section 34 — Version Pinning)
+- latency percentiles;
+- delivery rate;
+- duplicate count/rate;
+- errors;
+- reconnect behavior;
+- event counts và các aggregate statistics khác được ghi trong `ScenarioResult`.
 
-Mỗi lần chạy nên ghi kèm (đã tự động ghi trong `result.environment` của mỗi
-file JSON): Node.js version, OS/platform/arch, hostname. **Cần bổ sung thủ
-công** khi viết báo cáo cuối: CPU, RAM, có chạy cùng máy với backend hay
-không, có ứng dụng nào khác đang chạy cạnh tranh tài nguyên hay không.
+Khi phân tích kết quả, phải phân biệt latency được đo ở application/server với browser-visible receipt time. Đặc biệt Web Push không có browser receipt timestamp trong common Node benchmark.
+
+## Giới hạn đã biết
+
+- **Local/synthetic setup:** benchmark mặc định có thể chạy client giả lập và backend trên cùng máy. Đây không phải production-scale benchmark.
+- **Single-instance application:** in-process signaling và SQLite phù hợp với lab hiện tại nhưng không đại diện cho horizontal scaling qua nhiều application instances.
+- **Scenario H:** chỉ runner network scenario cần Toxiproxy; A–G, I, J không phụ thuộc Toxiproxy.
+- **Scenario G:** mô phỏng slow processing ở tầng ứng dụng, không phải socket-buffer backpressure thực tế.
+- **Scenario F:** reconnect semantics không tương đương giữa các transport. Short Polling không có persistent connection nên không nên so sánh reconnect event 1:1 với SSE/WebSocket/Long Polling.
+- **Benchmark interference:** client giả lập và server chạy cùng máy có thể cạnh tranh CPU/network. Nếu cần tách tải, chạy benchmark ở máy khác và cấu hình API base URL phù hợp.
+
+## Web Push — workflow riêng
+
+Web Push không chạy qua `run.ts` và không nằm trong common 4-transport matrix.
+
+```bash
+npm run webpush-dispatch
+```
+
+Workflow này không thể biến browser receipt thành một Node.js latency metric đáng tin cậy. Push Service, Service Worker và OS notification đều nằm ngoài simulated-client lifecycle.
+
+Để kiểm tra Web Push thực tế:
+
+1. bật Web Push trong browser thật;
+2. tạo subscription;
+3. chạy workflow dispatch/post;
+4. kiểm tra `delivery_attempts` để biết trạng thái server-side dispatch/delivery attempt;
+5. quan sát browser/OS notification nếu cần xác nhận user-visible receipt.
+
+Không dùng thời gian server dispatch như bằng chứng rằng OS/browser notification đã hiển thị.
+
+## Reproducibility và environment
+
+Mỗi result JSON ghi environment information như Node.js version, OS/platform/arch và hostname. Khi viết report cuối nên bổ sung hoặc ghi chú thêm:
+
+- CPU/RAM;
+- benchmark chạy cùng hay khác máy với backend;
+- các workload khác đang chạy cạnh tranh tài nguyên;
+- database state/seed parameters;
+- repeats và scenario configuration.
+
+Seed nên được cố định khi cần tái lập dataset:
+
+```bash
+cd backend
+npm run seed -- --users=2000 --avgFollows=50 --seed=12345
+```
+
+## Package scripts
+
+Các command chính được định nghĩa trong `benchmark/package.json`:
+
+```text
+npm run run
+npm run run-all
+npm run run-network
+npm run compare
+npm run report
+npm run webpush-dispatch
+npm run lint
+```
+
+`npm run lint` chạy TypeScript type-check cho benchmark mà không phát sinh output build.

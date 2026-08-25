@@ -1,5 +1,4 @@
 import { getDb } from "../db/index.js";
-import { notificationService } from "./notificationService.js";
 import type { NotificationView, Transport } from "./types.js";
 
 /**
@@ -29,9 +28,8 @@ export function fetchNotificationsAfter(
 }
 
 /**
- * Lấy notification theo danh sách id cụ thể (kèm recipient_id) — dùng khi
- * transport layer (SSE) cần biết CHÍNH XÁC ai là người nhận của từng
- * notification vừa fan-out, để publish đúng người qua SseHub.
+ * Lấy notification theo danh sách id cụ thể — dùng sau khi fan-out transaction
+ * đã commit, để transport layer luôn publish state thực tế đang có trong DB.
  */
 export function fetchNotificationsByIds(
   ids: number[]
@@ -54,26 +52,106 @@ export function fetchNotificationsByIds(
 }
 
 /**
- * Đánh dấu delivered + ghi delivery_attempt cho 1 batch notification vừa
- * trả về client qua 1 transport cụ thể. `baseTimeMs` = thời điểm request tới
- * server (Date.now()), dùng để tính latency = server nhận request - lúc
- * notification được tạo (KHÔNG phải lúc client thực sự nhận — đó là giới hạn
- * đã biết, ghi trong transport report: latency đo được là "server-side send
- * latency", không phải end-to-end thật vì server không có ACK từ client).
+ * Đánh dấu delivered + ghi delivery_attempt cho một batch trong DUY NHẤT
+ * transaction. better-sqlite3 là synchronous, vì vậy tránh UPDATE + INSERT
+ * riêng lẻ cho từng notification trên hot path.
  */
 export function recordDeliveryBatch(
   rows: NotificationView[],
   transport: Transport,
   baseTimeMs: number
 ): void {
-  for (const n of rows) {
-    const latencyMs = baseTimeMs - n.created_at * 1000;
-    notificationService.markDelivered(n.id);
-    notificationService.recordDeliveryAttempt({
-      notificationId: n.id,
-      transport,
-      result: "success",
-      latencyMs,
-    });
-  }
+  if (rows.length === 0) return;
+
+  const db = getDb();
+  const markDelivered = db.prepare(
+    `UPDATE notifications
+     SET status = 'delivered', delivered_at = unixepoch()
+     WHERE id = ? AND status = 'queued'`
+  );
+  const recordAttempt = db.prepare(
+    `INSERT INTO delivery_attempts
+      (notification_id, transport, result, latency_ms, error_reason)
+     VALUES (?, ?, 'success', ?, NULL)`
+  );
+
+  const writeBatch = db.transaction(() => {
+    for (const row of rows) {
+      const latencyMs = Math.max(0, baseTimeMs - row.created_at * 1000);
+      markDelivered.run(row.id);
+      recordAttempt.run(row.id, transport, latencyMs);
+    }
+  });
+
+  writeBatch();
+}
+
+export interface AcknowledgedDelivery {
+  notificationId: number;
+  recipientId: number;
+  latencyMs: number;
+}
+
+/**
+ * WebSocket ACK instrumentation. ACKs được gom thành một transaction để
+ * tránh một UPDATE + INSERT synchronous cho mỗi frame WebSocket.
+ * `latencyMs` được tính từ notification.created_at tới lúc server nhận ACK.
+ */
+export function recordAcknowledgedBatch(items: AcknowledgedDelivery[]): void {
+  if (items.length === 0) return;
+
+  const db = getDb();
+  const markAcknowledged = db.prepare(
+    `UPDATE notifications
+     SET status = 'acknowledged'
+     WHERE id = ? AND recipient_id = ?
+       AND status IN ('queued', 'delivered')`
+  );
+  const recordAttempt = db.prepare(
+    `INSERT INTO delivery_attempts
+      (notification_id, transport, result, latency_ms, error_reason)
+     VALUES (?, 'websocket', 'success', ?, NULL)`
+  );
+
+  const writeBatch = db.transaction(() => {
+    for (const item of items) {
+      markAcknowledged.run(item.notificationId, item.recipientId);
+      recordAttempt.run(item.notificationId, Math.max(0, item.latencyMs));
+    }
+  });
+
+  writeBatch();
+}
+
+export interface DeliveryAttemptView {
+  notificationId: number;
+  transport: Transport;
+  result: "success" | "failed" | "timeout";
+  latencyMs: number | null;
+}
+
+/**
+ * Đọc delivery_attempts phục vụ benchmark. Đây là server-side delivery / ACK
+ * latency, KHÔNG phải local browser render latency.
+ */
+export function fetchDeliveryAttemptsByNotificationIds(
+  ids: number[]
+): DeliveryAttemptView[] {
+  if (ids.length === 0) return [];
+
+  const db = getDb();
+  const placeholders = ids.map(() => "?").join(",");
+
+  return db
+    .prepare(
+      `SELECT
+         notification_id AS notificationId,
+         transport,
+         result,
+         latency_ms AS latencyMs
+       FROM delivery_attempts
+       WHERE notification_id IN (${placeholders})
+       ORDER BY id ASC`
+    )
+    .all(...ids) as DeliveryAttemptView[];
 }

@@ -18,4 +18,6 @@ export interface SimulatedClientOptions {
   isSlowClient: boolean;
   /** Độ trễ nhân tạo (ms) mà "slow client" thêm vào TRƯỚC KHI coi là đã xử lý xong 1 event. */
   slowClientExtraDelayMs: number;
+  /** High-water mark captured immediately before the measured run starts. */
+  initialCursor?: number;
 }

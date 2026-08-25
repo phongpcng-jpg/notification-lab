@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { API_BASE_URL } from "../config.js";
 import { computeBackoffDelay } from "./backoff.js";
 import type { PolledNotification } from "./types.js";
 
@@ -15,13 +16,9 @@ const BASE_RETRY_DELAY_MS = 1_000;
 /**
  * LONG POLLING client.
  *
- * Khác Short Polling ở chỗ: không có "interval" cố định — server tự giữ
- * request tới khi có dữ liệu hoặc timeout, nên client chỉ cần MỞ LẠI request
- * ngay lập tức sau mỗi response thành công (không cần setTimeout chờ).
- *
- * Dùng AbortController để hủy request đang treo (có thể kéo dài tới
- * LONG_POLL_TIMEOUT_MS ~25s) khi user đổi transport hoặc đổi user — nếu
- * không abort, request cũ vẫn chạy ngầm và có thể ghi đè state sai user.
+ * Server giữ request tới khi có dữ liệu hoặc timeout, nên client mở lại
+ * request ngay sau response thành công. AbortController hủy request đang
+ * treo khi đổi transport/user; lỗi mạng thật được retry bằng backoff + jitter.
  */
 export function useLongPolling(userId: number | null, enabled: boolean) {
   const [notifications, setNotifications] = useState<PolledNotification[]>([]);
@@ -49,7 +46,7 @@ export function useLongPolling(userId: number | null, enabled: boolean) {
 
     try {
       const res = await fetch(
-        `/api/notifications/long-poll?userId=${userId}&after=${afterRef.current}`,
+        `${API_BASE_URL}/notifications/long-poll?userId=${userId}&after=${afterRef.current}`,
         { signal: controller.signal }
       );
       if (!res.ok) {
@@ -68,16 +65,12 @@ export function useLongPolling(userId: number | null, enabled: boolean) {
       attemptRef.current = 0;
       setLastError(null);
 
-      // Server đã tự giữ request tới khi có data/timeout — mở lại NGAY,
-      // không cần chờ thêm (khác hẳn short polling).
       if (!stoppedRef.current) {
         void loop();
       }
     } catch (err) {
-      if (controller.signal.aborted) {
-        // Do stop()/cleanup gây ra — không phải lỗi mạng thật, không retry.
-        return;
-      }
+      if (controller.signal.aborted) return;
+
       attemptRef.current += 1;
       const delay = computeBackoffDelay(attemptRef.current, {
         baseMs: BASE_RETRY_DELAY_MS,

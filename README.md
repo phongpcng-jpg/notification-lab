@@ -1,152 +1,318 @@
 # Notification Realtime Lab
 
-Hệ thống thực nghiệm so sánh 5 kỹ thuật notification web (Short Polling,
-Long Polling, SSE, WebSocket, Web Push) trên cùng một domain: đăng bài +
-follow.
+Hệ thống thực nghiệm so sánh 5 kỹ thuật notification web trên cùng một domain: đăng bài + follow.
 
-> **Trạng thái hiện tại: Phase 2 (5/5 transport) + Benchmark Framework (Phase
-> 9-11) HOÀN THÀNH.**
-> Đã có: domain model, migration, CRUD, fan-out notification, seed script,
-> frontend đầy đủ 5 transport, và **benchmark framework hoàn chỉnh**: 4/5
-> transport tự động hoá được (Web Push benchmark riêng, giới hạn ghi rõ),
-> 10/10 scenario A-J implement được (Scenario H dùng Toxiproxy, thiết kế độc
-> lập — chỉ H mới cần Toxiproxy đang chạy, 9 scenario còn lại không bị ảnh
-> hưởng), thu thập metrics (latency percentile, delivery rate, duplicate,
-> error, reconnect), so sánh cross-transport tự động.
-> **CHƯA CÓ LẦN CHẠY THẬT NÀO** — sandbox viết code này không có network để
-> `npm install`. Mọi số liệu benchmark là `PENDING` cho tới khi bạn tự chạy.
-> **Chưa làm:** deploy free hosting (để sau theo xác nhận), báo cáo so sánh
-> cuối cùng (cần số liệu thật trước).
+- Short Polling
+- Long Polling
+- Server-Sent Events (SSE)
+- WebSocket
+- Web Push
+
+> **Trạng thái hiện tại:** 5/5 transport đã được implement; benchmark framework đã hoàn thiện cho 4 transport (Short Polling, Long Polling, SSE, WebSocket), còn Web Push có workflow riêng. Scenario A–J đã được định nghĩa; Scenario H là network scenario chạy riêng với Toxiproxy.
+>
+> **Lưu ý về benchmark:** framework và methodology đã có, nhưng chỉ các kết quả được sinh từ benchmark và lưu trong `benchmark/results/processed/` mới được dùng làm experimental evidence. Các lần chạy thủ công/local không tự động trở thành official benchmark result.
 
 ## 1. Requirements
-- Node.js ≥ 20 (đã test với v22)
+
+- Node.js ≥ 20
 - npm ≥ 10
-- Không cần cài database server riêng (SQLite là file-based)
+- Không cần cài database server riêng: backend dùng SQLite (`better-sqlite3`).
 
 ## 2. Installation
+
+Cài dependency cho từng phần:
+
 ```bash
-cd backend && npm install
-cd ../frontend && npm install
+cd backend
+npm install
+
+cd ../frontend
+npm install
+
+cd ../benchmark
+npm install
 ```
 
 ## 3. Environment variables
+
+### Backend
+
 ```bash
 cd backend
 cp .env.example .env
-npm run generate-vapid-keys   # in ra VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY, dán vào .env
+npm run generate-vapid-keys
 ```
-Web Push sẽ tự bị bỏ qua (không lỗi) nếu bạn chưa chạy bước sinh VAPID key —
-4 transport còn lại hoạt động bình thường không cần bước này.
+
+`generate-vapid-keys` in ra `VAPID_PUBLIC_KEY` và `VAPID_PRIVATE_KEY`; không commit key thật vào Git.
+
+Các biến chính trong `backend/.env` gồm:
+
+- `PORT` — port Fastify.
+- `DB_PATH` — đường dẫn SQLite database.
+- `LONG_POLL_TIMEOUT_MS` — timeout tối đa của Long Polling.
+- `SHORT_POLL_INTERVAL_MS` — interval được server gợi ý cho Short Polling client.
+- `SSE_HEARTBEAT_MS` — heartbeat SSE.
+- `WS_HEARTBEAT_MS` — WebSocket heartbeat.
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` — Web Push.
+- `CORS_ORIGIN` — origin frontend được phép gọi backend.
+- `BENCHMARK_API_KEY` — secret cho benchmark internal API, nếu sử dụng.
+- `LOG_LEVEL` — log level.
+
+Xem `backend/.env.example` để biết giá trị mặc định và chú thích đầy đủ.
+
+### Frontend
+
+```bash
+cd frontend
+cp .env.example .env
+```
+
+`VITE_API_BASE_URL` là **public origin của backend**, không thêm `/api`.
+
+- Local development: có thể để trống để dùng Vite proxy `/api`.
+- Production/Render: đặt thành URL public của backend, ví dụ `https://<backend>.onrender.com`.
+
+Frontend tự suy ra WebSocket URL từ backend origin và kết nối tới `/ws`.
 
 ## 4. Local development
 
 ### Chạy backend
+
 ```bash
 cd backend
-npm run migrate   # tạo schema (idempotent, chạy lại vẫn an toàn)
-npm run dev       # Fastify dev server tại http://localhost:3000
+npm run migrate
+npm run dev
 ```
+
+Fastify chạy mặc định tại `http://localhost:3000`.
+
+> `server.ts` cũng gọi migration idempotent khi process khởi động. Chạy `npm run migrate` riêng ở local vẫn hữu ích để chuẩn bị/kiểm tra database trước khi phát triển hoặc test.
 
 ### Chạy frontend
+
 ```bash
 cd frontend
-npm run dev        # Vite dev server tại http://localhost:5173 (proxy /api -> :3000)
+npm run dev
 ```
 
-Mở `http://localhost:5173`, chọn/tạo user, follow người khác, đăng bài, xem
-feed. Chọn transport ở panel "Notification (realtime)" — mở 2 trình duyệt/2
-tab với 2 user khác nhau (1 người follow người kia) để thấy notification
-thật khi đăng bài.
+Vite chạy mặc định tại `http://localhost:5173`. Khi `VITE_API_BASE_URL` để trống, Vite proxy các request `/api` tới backend local. Khi biến này được cấu hình, frontend gọi backend trực tiếp.
 
-**Web Push cần lưu ý:** bấm nút "Bật thông báo đẩy" (không tự động — trình
-duyệt yêu cầu user gesture), rồi có thể đóng tab để test — notification vẫn
-hiện ra qua OS. Chạy trên `localhost` không cần HTTPS thật (ngoại lệ của
-trình duyệt).
+Mở `http://localhost:5173`, chọn/tạo user, follow người khác, đăng bài và chọn transport trong panel **Notification (realtime)**. Có thể mở hai tab/trình duyệt với hai user khác nhau để quan sát notification.
 
-## 5. Sinh dữ liệu lớn (users + follow graph)
+### Web Push local
+
+Bấm **Bật thông báo đẩy** để tạo subscription; browser yêu cầu user gesture nên việc này không tự động. `localhost` là secure context được browser hỗ trợ cho local Web Push testing, không cần HTTPS thật.
+
+## 5. Sinh dữ liệu lớn
+
 ```bash
 cd backend
 npm run seed -- --users=10000 --avgFollows=50 --seed=12345
 ```
-Deterministic: cùng tham số → cùng dữ liệu (phục vụ benchmark tái lập được).
-Xem chi tiết options trong `backend/scripts/seed.ts`.
 
-**Lưu ý:** seed chỉ tạo user/follow/post nền cho việc đọc (feed, follower
-list). Nó KHÔNG tạo notification/event — muốn test luồng notification thật,
-dùng `POST /posts` (qua UI hoặc benchmark generator ở Phase 2+) trên dữ liệu
-đã seed.
+Seed deterministic: cùng tham số sẽ tạo cùng dữ liệu nền. Seed tạo users/follows/posts phục vụ feed và follower graph; nó không tự tạo notification/event cho benchmark notification. Muốn tạo notification thật, dùng `POST /posts` qua UI/API hoặc benchmark generator.
 
-## 5b. Chạy test
+## 6. Chạy test
+
 ```bash
-cd backend && npm test    # vitest, dùng SQLite in-memory, không đụng data/ thật
-cd frontend && npm test   # vitest, unit test cho backoff util
+cd backend
+npm test
+
+cd ../frontend
+npm test
 ```
 
-## 6. Running benchmarks
+Backend tests dùng SQLite in-memory trong test setup; frontend tests kiểm tra các transport utilities/backoff hiện có.
+
+## 7. Running benchmarks
+
 ```bash
 cd benchmark
 npm install
-npm run run-all              # 9 scenario × 4 transport × 3 lần lặp (mặc định)
-npm run report                # tổng hợp -> results/reports/final-report.{json,md}
-```
-Chạy nặng hơn / gồm cả Scenario H (cần Toxiproxy):
-```bash
-npm run run-all -- --repeats=5 --subscriber-scale=10 --duration-scale=2 --include-h
+npm run run-all
 npm run report
 ```
-Xem `benchmark/README.md` cho đầy đủ flag, và `docs/final-report/FINAL-COMPARISON-REPORT.md`
-cho báo cáo template (lý thuyết đầy đủ, thực nghiệm chờ số liệu thật từ `npm run report`).
 
-## 7. Running stress tests
-Dùng chung framework ở mục 6 — các scenario C (Massive Fan-out), E
-(Connection Storm), F (Reconnection Storm) chính là stress test. Tăng
-`--subscribers=` để đẩy tải lên cao hơn mức mặc định trong config.
+`run-all` mặc định chạy **9 scenario × 4 transport × 3 repeats** cho common benchmark matrix:
 
-## 8. Deployment
-Chưa làm ở phase này (theo xác nhận: local trước, nghiên cứu free hosting sau).
-
-## 9. Troubleshooting
-- **`SQLITE_CANTOPEN`**: kiểm tra `DB_PATH` trong `.env`, thư mục `data/` sẽ
-  tự được tạo khi chạy `npm run migrate`/`npm run dev`, nhưng nếu chạy từ
-  thư mục khác `backend/` thì path tương đối sẽ sai.
-- **CORS lỗi khi gọi API trực tiếp (không qua Vite proxy)**: kiểm tra
-  `CORS_ORIGIN` trong `.env` khớp với origin frontend đang chạy.
-- **`npm install` lỗi vì không có mạng**: project này được viết trong sandbox
-  không có network access nên **chưa được `npm install`/chạy thử thật** —
-  bạn cần chạy `npm install` trên máy có internet trước khi `npm run dev`.
-  Nếu gặp lỗi version conflict, báo lại để điều chỉnh `package.json`.
-
-## 10. Project structure
+```text
+A B C D E F G I J
+×
+Short Polling / Long Polling / SSE / WebSocket
 ```
+
+Scenario H là network scenario riêng, dùng Toxiproxy:
+
+```bash
+npm run run-all -- --include-h
+```
+
+Có thể tăng repeats/subscriber/duration khi cần:
+
+```bash
+npm run run-all -- --repeats=5 --subscriber-scale=10 --duration-scale=2
+npm run report
+```
+
+`npm run report` tạo:
+
+```text
+benchmark/results/reports/final-report.md
+benchmark/results/reports/final-report.json
+```
+
+Template/reference cho report cuối nằm ở `docs/final-report/FINAL-COMPARISON-REPORT.md`; template không bị `npm run report` ghi đè.
+
+Xem `benchmark/README.md` để biết đầy đủ flags, metrics và methodology.
+
+## 8. Web Push benchmark / dispatch
+
+Web Push không nằm trong common 4-transport benchmark matrix vì end-to-end browser receipt phụ thuộc Service Worker và Push Service. Project có workflow dispatch riêng:
+
+```bash
+cd benchmark
+npm run webpush-dispatch
+```
+
+Không dùng thời gian server dispatch như bằng chứng rằng OS/browser notification đã hiển thị cho user.
+
+## 9. Running stress tests
+
+Stress scenarios dùng chung benchmark framework:
+
+- **C** — Massive Fan-out
+- **E** — Connection Storm
+- **F** — Reconnection behavior
+- **G** — Slow clients / application-level delay
+- **J** — Mixed workload
+
+Tăng `--subscribers`, `--subscriber-scale` hoặc `--duration-scale` khi cần. Scenario F không có cùng ý nghĩa reconnect lifecycle đối với Short Polling vì Short Polling không duy trì persistent connection.
+
+## 10. Deployment
+
+Branch `feature/render-deployment` hỗ trợ tách frontend và backend khi deploy. Hiện branch này đang được cấu hình với **hai Render services** dùng cùng repository:
+
+| Service | Root directory | URL | Auto deploy |
+|---|---|---|---|
+| Backend `notification-lab` | `backend` | `https://notification-lab.onrender.com` | **Tắt** — deploy thủ công |
+| Frontend `notification-lab-1` | `frontend` | `https://notification-lab-1.onrender.com` | **Bật** — theo commit |
+
+Các thông tin trên phản ánh cấu hình Render hiện tại; nếu service được tạo lại hoặc đổi tên/URL thì cần cập nhật phần này.
+
+### Backend trên Render
+
+Service backend hiện dùng:
+
+- Root directory: `backend/`
+- Runtime: Node
+- Plan: Free
+- Health check: `/health`
+- Số instance: `1`
+- Region: Oregon
+- Start command:
+
+```bash
+npm start
+```
+
+Build command hiện được cấu hình trên Render là:
+
+```bash
+npm install && npm run seed -- --users=2000 --avgFollows=200 --seed=12345 && npm run build
+```
+
+> Build hiện tại có bước `seed` để chuẩn bị dataset cho môi trường Render. Đây là cấu hình deployment hiện tại, **không phải yêu cầu của production build** và không thay thế bước seed tùy chỉnh khi benchmark/local.
+
+Render cung cấp `PORT`; backend bind vào `0.0.0.0` và port được environment cung cấp. Thiết lập `CORS_ORIGIN` thành **public URL của frontend**:
+
+```text
+CORS_ORIGIN=https://notification-lab-1.onrender.com
+```
+
+Thiết lập các secret/config cần thiết trong Render Environment Variables, đặc biệt VAPID keys nếu dùng Web Push và `BENCHMARK_API_KEY` nếu benchmark gọi internal delivery-attempts endpoint.
+
+Vì **auto deploy backend đang tắt**, sau khi push commit mới lên `feature/render-deployment` cần trigger deploy backend thủ công trên Render trước khi test backend production. Frontend hiện auto deploy theo commit.
+
+### Frontend trên Render
+
+Service frontend hiện là Render Static Site:
+
+- Root directory: `frontend/`
+- Build command:
+
+```bash
+npm install && npm run build
+```
+
+- Publish directory:
+
+```text
+dist
+```
+
+- Auto deploy: bật theo commit trên `feature/render-deployment`.
+- Set `VITE_API_BASE_URL` thành:
+
+```text
+https://notification-lab.onrender.com
+```
+
+Không thêm `/api`.
+
+Frontend production sẽ gọi trực tiếp backend HTTP và WebSocket (`/ws`); Vite `/api` proxy chỉ dành cho local development.
+
+### SQLite trên Render
+
+`DB_PATH` mặc định là `./data/notification-lab.db`. SQLite là local file storage của backend và không phải managed database. Nếu deployment cần dữ liệu tồn tại qua service restart/redeploy, phải cấu hình persistent disk/storage phù hợp với hosting; nếu không, không nên coi SQLite trên ephemeral filesystem là durable production storage.
+
+## 11. Troubleshooting
+
+- **`SQLITE_CANTOPEN`**: kiểm tra `DB_PATH` và bảo đảm thư mục chứa database tồn tại/có quyền ghi. Chạy `npm run migrate` trước lần chạy local đầu tiên.
+- **CORS lỗi**: kiểm tra `CORS_ORIGIN` khớp chính xác với frontend origin. Khi frontend chạy trên Render, không dùng `http://localhost:5173`.
+- **Frontend production gọi sai API**: kiểm tra `VITE_API_BASE_URL`; giá trị này là backend public origin và **không** có `/api` ở cuối.
+- **WebSocket không kết nối production**: kiểm tra backend public URL, `/ws` endpoint và proxy/hosting có hỗ trợ WebSocket.
+- **Web Push không hoạt động**: kiểm tra `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, browser permission và subscription.
+- **Benchmark không có kết quả**: kiểm tra backend đang chạy, `BENCHMARK_API_KEY` nếu benchmark endpoint yêu cầu, và xem `benchmark/results/processed/` trước khi chạy `npm run report`.
+- **Scenario H thất bại**: kiểm tra Toxiproxy đang chạy và chỉ chạy H khi network fault injection đã được cấu hình.
+
+## 12. Project structure
+
+```text
 notification-lab/
-├── backend/        # Fastify + TypeScript + better-sqlite3
+├── backend/                 # Fastify + TypeScript + better-sqlite3
 │   ├── src/
-│   │   ├── db/          # schema.sql, connection
-│   │   ├── domain/      # NotificationService, 5 transport hub/sender, types
-│   │   ├── routes/      # users, follows, posts, notifications + 5 transport routes
-│   │   ├── test/         # helpers.ts dùng chung cho mọi test file
+│   │   ├── db/              # schema.sql, connection
+│   │   ├── domain/          # NotificationService, transport hubs/senders, types
+│   │   ├── routes/          # users, follows, posts, notifications + transport routes
+│   │   ├── test/             # shared test helpers
 │   │   └── server.ts / app.ts
-│   └── scripts/         # migrate.ts, seed.ts, generateVapidKeys.ts
-├── frontend/        # React + Vite
-│   ├── public/sw.js      # Service Worker cho Web Push
-│   └── src/transports/   # 1 hook/module riêng cho mỗi transport + backoff dùng chung
-├── benchmark/        # framework benchmark hoàn chỉnh — CHƯA CÓ LẦN CHẠY THẬT
-│   ├── lib/             # apiClient, pickPublisher, metrics, report (dùng chung)
-│   ├── generators/       # 1 SimulatedClient/transport (4/5, Web Push riêng)
-│   ├── runners/            # run.ts, runAll.ts, runNetworkScenario.ts, compareTransports.ts,
-│   │                          webPushDispatch.ts, generateFinalReport.ts
-│   └── scenarios/            # 10/10 scenario config (A-J), H dùng Toxiproxy
-├── research/          # báo cáo nghiên cứu lý thuyết (Track A)
+│   └── scripts/             # migrate, seed, VAPID keys, schema copy
+├── frontend/                # React + Vite
+│   ├── public/sw.js          # Service Worker cho Web Push
+│   └── src/transports/       # transport modules + shared backoff
+├── benchmark/               # benchmark framework
+│   ├── lib/                 # API client, metrics, helpers
+│   ├── generators/          # simulated clients for common transports
+│   ├── runners/             # run, run-all, network, compare, report, Web Push
+│   ├── scenarios/           # A-J scenario configurations
+│   └── results/              # processed inputs and generated reports
+├── research/                # research material
 ├── docs/
 │   ├── architecture.md
 │   ├── adr/                 # Architectural Decision Records
-│   ├── transport-reports/    # báo cáo riêng cho từng transport (5 file)
-│   └── final-report/           # báo cáo so sánh cuối cùng (template + số liệu thật khi có)
+│   ├── transport-reports/   # one report per transport
+│   └── final-report/        # final comparison report template
 └── README.md
 ```
 
+## 13. Documentation
+
+- `docs/architecture.md` — kiến trúc và data flow hiện tại.
+- `docs/transport-reports/` — phân tích riêng cho Short Polling, Long Polling, SSE, WebSocket và Web Push.
+- `docs/final-report/FINAL-COMPARISON-REPORT.md` — template/reference cho final comparison report.
+- `docs/adr/ADR-001-tech-stack.md` — rationale cho Fastify, `ws`, SQLite và React/Vite.
+- `benchmark/README.md` — benchmark commands, scenarios, metrics và methodology.
+
 ## Nguồn gốc thiết kế
-Xem `docs/adr/ADR-001-tech-stack.md` cho lý do chọn Fastify/`ws`/SQLite,
-và `docs/architecture.md` cho luồng dữ liệu 1 post → N notification cùng
-các giới hạn (single-instance, in-process pub/sub) được ghi rõ là simplified
-so với production.
+
+Xem `docs/adr/ADR-001-tech-stack.md` cho lý do chọn Fastify/`ws`/SQLite, và `docs/architecture.md` cho luồng dữ liệu 1 post → N notification cùng các giới hạn như single-instance/in-process signaling được ghi rõ là simplified so với production.

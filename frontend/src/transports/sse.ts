@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { API_BASE_URL } from "../config.js";
 import type { PolledNotification } from "./types.js";
 import {
   toPolledNotification,
@@ -35,7 +36,9 @@ export function useSse(userId: number | null, enabled: boolean) {
 
     setNotifications([]); // reset khi đổi user/transport, tránh lẫn dữ liệu
     setConnectionState("connecting");
-    const es = new EventSource(`/api/notifications/stream?userId=${userId}`);
+    const es = new EventSource(
+      `${API_BASE_URL}/notifications/stream?userId=${userId}`
+    );
     esRef.current = es;
 
     es.addEventListener("open", () => {

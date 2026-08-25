@@ -59,7 +59,11 @@ async function main(): Promise<void> {
       "Reconnects"
   );
   for (const r of results) {
-    const lat = r.latency;
+    // compareTransports compares the client-observed end-to-end latency.
+    // serverDeliveryLatency is reported separately and is not used here because
+    // it measures backend delivery-attempt timing rather than transport behavior
+    // as experienced by the benchmark client.
+    const lat = r.e2eLatency;
     console.log(
       r.transport.padEnd(15) +
         String(lat?.p50Ms ?? "N/A").padEnd(10) +

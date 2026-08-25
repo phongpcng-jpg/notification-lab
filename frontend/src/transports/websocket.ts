@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { WS_BASE_URL } from "../config.js";
 import { computeBackoffDelay } from "./backoff.js";
 import type { PolledNotification } from "./types.js";
 import {
@@ -57,8 +58,7 @@ export function useWebSocket(userId: number | null, enabled: boolean) {
     if (!userId || stoppedRef.current) return;
 
     setConnectionState("connecting");
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/api/ws?userId=${userId}&after=${afterRef.current}`;
+    const url = `${WS_BASE_URL}?userId=${userId}&after=${afterRef.current}`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
