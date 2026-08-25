@@ -46,6 +46,7 @@ export async function websocketRoutes(app: FastifyInstance) {
       const queueAck = (notificationId: number) => {
         const createdAtMs = sentCreatedAtMs.get(notificationId);
         if (createdAtMs === undefined) return;
+        if (pendingAcks.some((item) => item.notificationId === notificationId)) return;
         pendingAcks.push({
           notificationId,
           recipientId: userId,
@@ -79,11 +80,6 @@ export async function websocketRoutes(app: FastifyInstance) {
         recordDeliveryBatch([row], "websocket", serverSentAtMs);
       }
 
-      // Re-query AFTER the fan-out transaction has committed. This closes the
-      // race between initial cursor read and subscription registration.
-      const missed = fetchNotificationsAfter(userId, after, 200);
-      for (const row of missed) sendNotification(row);
-
       const subscription: WsSubscription = {
         socket,
         connectionId,
@@ -93,6 +89,13 @@ export async function websocketRoutes(app: FastifyInstance) {
         },
       };
       const unsubscribe = wsHub.subscribe(userId, subscription);
+
+      // Subscribe FIRST, then re-query the DB. If fan-out happens before the
+      // query, PushHub delivers it; if it happened before the subscription,
+      // this replay query recovers it. This removes the subscribe/replay race.
+      const missed = fetchNotificationsAfter(userId, after, 200);
+      for (const row of missed) sendNotification(row);
+
       socket.send(JSON.stringify({ type: "connected", userId, connectionId }));
 
       let isAlive = true;
