@@ -3,7 +3,6 @@ import type { WebSocket } from "ws";
 import { config } from "../config.js";
 import {
   fetchNotificationsAfter,
-  recordDeliveryBatch,
   recordAcknowledgedBatch,
   type AcknowledgedDelivery,
 } from "../domain/notificationQueries.js";
@@ -70,14 +69,18 @@ export async function websocketRoutes(app: FastifyInstance) {
           });
           return;
         }
+
         const serverSentAtMs = Date.now();
         const payload = JSON.stringify({
           type: "notification",
           data: serializeNotificationForClient(row, serverSentAtMs),
         });
         socket.send(payload);
+
+        // Do not synchronously write a successful delivery here. The benchmark
+        // now treats the client ACK as the successful delivery observation,
+        // so one DB write batch replaces the old send-write + ACK-write pair.
         sentCreatedAtMs.set(row.id, row.created_at * 1000);
-        recordDeliveryBatch([row], "websocket", serverSentAtMs);
       }
 
       const subscription: WsSubscription = {
