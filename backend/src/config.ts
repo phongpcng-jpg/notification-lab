@@ -6,8 +6,9 @@ function required(name: string, fallback?: string): string {
   return v;
 }
 
-const vitestWorker = process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID;
-const defaultDbPath = vitestWorker ? `./data/test-${vitestWorker}.db` : "./data/notification-lab.db";
+// Vitest workers must never share the benchmark/development SQLite file.
+// `:memory:` gives each worker/module instance a completely isolated database.
+const defaultDbPath = process.env.VITEST ? ":memory:" : "./data/notification-lab.db";
 
 export const config = {
   port: Number(process.env.PORT ?? 3000),
