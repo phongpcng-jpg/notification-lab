@@ -233,4 +233,4 @@ Therefore, the A–G experiments support a requirement-driven decision rather th
 - **WebSocket:** appropriate when bidirectional communication or very frequent realtime interaction justifies additional connection/state complexity.
 - **Web Push:** evaluate separately for offline/background or OS-level notifications because its browser/Push Service delivery path is fundamentally different from the four in-app transports.
 
-These conclusions apply only to the tested implementation, workload configurations and execution environment. Scenarios H, I and J remain necessary before the final report can claim coverage of poor-network, payload-size and mixed-workload behavior.
+These conclusions apply only to the tested implementation, workload configurations and execution environment. The completed A–G analysis should now be read together with the generated H, I and J results; those scenarios extend coverage to the configured Toxiproxy impairment profile, payload-size behavior and mixed workload respectively.
