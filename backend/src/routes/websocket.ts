@@ -32,6 +32,7 @@ export async function websocketRoutes(app: FastifyInstance) {
       const after = Number(req.query.after ?? 0);
       const connectionId = openConnection(userId, "websocket");
       const pendingAcks: AcknowledgedDelivery[] = [];
+      const sentCreatedAtMs = new Map<number, number>();
       let ackFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
       const flushAcks = () => {
@@ -39,13 +40,16 @@ export async function websocketRoutes(app: FastifyInstance) {
         if (pendingAcks.length === 0) return;
         const batch = pendingAcks.splice(0, pendingAcks.length);
         recordAcknowledgedBatch(batch);
+        for (const item of batch) sentCreatedAtMs.delete(item.notificationId);
       };
 
       const queueAck = (notificationId: number) => {
+        const createdAtMs = sentCreatedAtMs.get(notificationId);
+        if (createdAtMs === undefined) return;
         pendingAcks.push({
           notificationId,
           recipientId: userId,
-          latencyMs: Math.max(0, Date.now() - 0),
+          latencyMs: Math.max(0, Date.now() - createdAtMs),
         });
         if (pendingAcks.length >= ACK_BATCH_SIZE) {
           flushAcks();
@@ -71,11 +75,12 @@ export async function websocketRoutes(app: FastifyInstance) {
           data: serializeNotificationForClient(row, serverSentAtMs),
         });
         socket.send(payload);
+        sentCreatedAtMs.set(row.id, row.created_at * 1000);
         recordDeliveryBatch([row], "websocket", serverSentAtMs);
       }
 
-      // Re-query AFTER fan-out transaction has committed. This is the recovery
-      // path for notifications created just before the socket subscribed.
+      // Re-query AFTER the fan-out transaction has committed. This closes the
+      // race between initial cursor read and subscription registration.
       const missed = fetchNotificationsAfter(userId, after, 200);
       for (const row of missed) sendNotification(row);
 
@@ -126,6 +131,7 @@ export async function websocketRoutes(app: FastifyInstance) {
         clearInterval(heartbeatTimer);
         if (ackFlushTimer) clearTimeout(ackFlushTimer);
         flushAcks();
+        sentCreatedAtMs.clear();
         unsubscribe();
         closeConnection(connectionId, "client_disconnect");
       };
